@@ -742,6 +742,7 @@ export const WaitingQueueView: React.FC<WaitingQueueViewProps> = ({
         /* PC Card Grid View */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {filteredQueue.map((item) => {
+            const vehicle = item;
             const isLoad = item.purpose === 'Loading';
             const waitInfo = getWaitStatusInfo(item.dateTime);
             const purposeColor = isLoad
@@ -808,19 +809,18 @@ export const WaitingQueueView: React.FC<WaitingQueueViewProps> = ({
                     </span>
                   </div>
 
-                  {/* Bulk Action Trigger for Multi-Stop / Courier Vehicles */}
-                  {(item.allTargets || []).length > 1 && (
+                  {/* Render Open Bulk Form button only when transport mode is Rail or Air */}
+                  {(vehicle.transportMode === 'Rail' || vehicle.transportMode === 'Air') && (
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onSelectVehicle(item.gateId);
+                        onSelectVehicle(vehicle.gateId);
                       }}
-                      className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-[11px] font-bold shadow-xs cursor-pointer transition mb-2"
+                      className="open-bulk-btn w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-[11px] font-bold shadow-xs cursor-pointer transition mb-2"
                       title="Open Bulk Submit Form for all destinations"
                     >
-                      <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
-                      <span>⚡ Open Bulk Form ({item.allTargets?.length} Stops)</span>
+                      ⚡ ⚡ Open Bulk Form ({vehicle.allTargets?.length || 2} Stops)
                     </button>
                   )}
 
@@ -917,6 +917,7 @@ export const WaitingQueueView: React.FC<WaitingQueueViewProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700 font-medium">
                 {filteredQueue.map((item) => {
+                  const vehicle = item;
                   const isLoad = item.purpose === 'Loading';
                   const waitInfo = getWaitStatusInfo(item.dateTime);
 
@@ -990,15 +991,15 @@ export const WaitingQueueView: React.FC<WaitingQueueViewProps> = ({
                       </td>
                       <td className="py-2.5 px-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {(item.allTargets || []).length > 1 && (
+                          {/* Render Open Bulk Form button only when transport mode is Rail or Air */}
+                          {(vehicle.transportMode === 'Rail' || vehicle.transportMode === 'Air') && (
                             <button
                               type="button"
-                              onClick={() => onSelectVehicle(item.gateId)}
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded-lg text-xs font-bold transition shadow-xs inline-flex items-center gap-1 cursor-pointer"
+                              onClick={() => onSelectVehicle(vehicle.gateId)}
+                              className="open-bulk-btn bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded-lg text-xs font-bold transition shadow-xs inline-flex items-center gap-1 cursor-pointer"
                               title="Open Bulk Form for all destinations"
                             >
-                              <Zap className="w-3 h-3 text-amber-300 fill-amber-300" />
-                              <span>Bulk Form ({item.allTargets?.length})</span>
+                              ⚡ ⚡ Open Bulk Form ({vehicle.allTargets?.length || 2} Stops)
                             </button>
                           )}
                           <button

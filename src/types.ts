@@ -102,6 +102,7 @@ export interface SecurityGateEntry {
   vehicle_type?: string;
   mobile: string;
   transporter: string;
+  transportMode?: 'Rail' | 'Air' | 'Road' | string;
   fromLoc: string;
   toLoc: string;
   dateTime: string;
@@ -134,6 +135,7 @@ export interface WaitingQueueItem {
   vType: string;
   mobile: string;
   transporter: string;
+  transportMode?: 'Rail' | 'Air' | 'Road' | string;
   purpose: 'Loading' | 'Unloading' | 'Parking / Transit';
   unit: string;
   location: string;

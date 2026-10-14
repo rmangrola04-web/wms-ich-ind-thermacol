@@ -336,6 +336,15 @@ export const GateSecurityView: React.FC<GateSecurityViewProps> = ({
       warehouse_name: combinedDestination || destination
     });
 
+    let transportMode: 'Rail' | 'Air' | 'Road' = 'Road';
+    const tUp = (mapped.transporter || transporter || '').toUpperCase();
+    const vUp = (vType || '').toUpperCase();
+    if (vUp.includes('RAIL') || tUp.includes('RAIL') || tUp.includes('SPARK TIME') || tUp.includes('SPARK')) {
+      transportMode = 'Rail';
+    } else if (vUp.includes('AIR') || tUp.includes('AIR') || tUp.includes('STAR LINE') || tUp.includes('SD CARGO') || tUp.includes('STARLINE')) {
+      transportMode = 'Air';
+    }
+
     const newLog: SecurityGateEntry = {
       id: `GATE-${Date.now()}`,
       purpose: mapped.purpose,
@@ -343,6 +352,7 @@ export const GateSecurityView: React.FC<GateSecurityViewProps> = ({
       vType: vType,
       mobile: 'N/A',
       transporter: mapped.transporter,
+      transportMode,
       fromLoc: mapped.purpose === 'Unloading' ? mapped.target_location : 'WAREHOUSE',
       toLoc: mapped.purpose === 'Loading' ? mapped.target_location : 'WAREHOUSE',
       destination: mapped.target_location,

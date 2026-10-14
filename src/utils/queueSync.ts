@@ -358,6 +358,17 @@ export function computeWaitingQueueItems(
 
       const resolvedLocation = uniqueTargets[0]?.location || resolveQueueActualLocation(veh, isUnloadVeh);
 
+      const tUpper = (veh.transporter || '').toUpperCase();
+      const vUpper = (veh.vType || '').toUpperCase();
+      const mUpper = (veh.transportMode || (veh as any).mode || '').toUpperCase();
+
+      let inferredMode: 'Rail' | 'Air' | 'Road' | string = veh.transportMode || 'Road';
+      if (mUpper === 'RAIL' || tUpper.includes('RAIL') || vUpper.includes('RAIL') || tUpper.includes('SPARK TIME') || tUpper.includes('SPARK')) {
+        inferredMode = 'Rail';
+      } else if (mUpper === 'AIR' || tUpper.includes('AIR') || vUpper.includes('AIR') || tUpper.includes('STAR LINE') || tUpper.includes('SD CARGO') || tUpper.includes('STARLINE')) {
+        inferredMode = 'Air';
+      }
+
       items.push({
         queueKey: compositeKey,
         gateId: veh.id,
@@ -366,6 +377,7 @@ export function computeWaitingQueueItems(
         vType: veh.vType || '32FT MXL',
         mobile: veh.mobile || 'N/A',
         transporter: veh.transporter || 'N/A',
+        transportMode: inferredMode,
         purpose: authoritativePurpose,
         unit: div,
         location: resolvedLocation,

@@ -1042,8 +1042,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             </div>
 
-            {/* Filter Toolbar with Accessible Inputs */}
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 bg-[#f9fafb] dark:bg-[#2d3748]/60 p-2.5 rounded-xl border border-slate-200 dark:border-[#3e4859]">
+            {/* Filter Toolbar with Accessible Inputs (Hidden on mobile as requested, visible on desktop/tablet md: 768px+) */}
+            <div className="hidden md:grid dashboard-filters-container grid-cols-1 sm:grid-cols-12 gap-2.5 bg-[#f9fafb] dark:bg-[#2d3748]/60 p-2.5 rounded-xl border border-slate-200 dark:border-[#3e4859]">
               
               {/* Search input */}
               <div className="sm:col-span-4 relative">
@@ -1275,8 +1275,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {activeReportTab === 'gate' && (
           <div className="space-y-3">
             
-            {/* Filter Toolbar with Accessible Inputs */}
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 bg-[#f9fafb] dark:bg-[#2d3748]/60 p-2.5 rounded-xl border border-slate-200 dark:border-[#3e4859]">
+            {/* Filter Toolbar with Accessible Inputs (Hidden on mobile as requested, visible on desktop/tablet md: 768px+) */}
+            <div className="hidden md:grid dashboard-filters-container grid-cols-1 sm:grid-cols-12 gap-2.5 bg-[#f9fafb] dark:bg-[#2d3748]/60 p-2.5 rounded-xl border border-slate-200 dark:border-[#3e4859]">
               {/* Gate Search */}
               <div className="sm:col-span-5 relative">
                 <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />

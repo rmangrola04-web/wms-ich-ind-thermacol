@@ -284,13 +284,13 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
     });
 
     const unsubProds = subscribeToThermocolProducts((data) => {
-      if (data) {
+      if (data && data.length > 0) {
         setProducts(data.map(p => ({ ...p, company: normalizeCompany(p.company) })));
       }
     });
 
     const unsubParties = subscribeToThermocolParties((data) => {
-      if (data) {
+      if (data && data.length > 0) {
         setParties(data.map(p => {
           const sanitized = sanitizePartyRecord(p, normalizeCompany(p.company));
           return { ...sanitized, company: normalizeCompany(p.company || sanitized.company) };
@@ -299,13 +299,13 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
     });
 
     const unsubTrans = subscribeToThermocolTransporters((data) => {
-      if (data) {
+      if (data && data.length > 0) {
         setTransporters(data.map(t => ({ ...t, company: normalizeCompany(t.company) })));
       }
     });
 
     const unsubDemands = subscribeToThermocolDemands((data) => {
-      if (data) {
+      if (data && data.length > 0) {
         setClientDemands(data.map(d => ({ ...d, company: normalizeCompany(d.company) })));
       }
     });

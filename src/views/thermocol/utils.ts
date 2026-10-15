@@ -66,6 +66,15 @@ export const formatInvNoForCompany = (company: CompanyType = 'AIL', seq: number)
   return conf.formatInvNo(seq);
 };
 
+export const formatDeliveryChallanNoForCompany = (company: CompanyType = 'AIL', seq: number): string => {
+  const norm = normalizeCompany(company);
+  const numStr = String(seq).padStart(2, '0');
+  if (norm === 'HPL') {
+    return `ICHAHPL-DEL-${numStr}/2026-27`;
+  }
+  return `ICHAIL-DEL-${numStr}/2026-27`;
+};
+
 export const getInvoiceCompany = (inv: { company?: CompanyType; invNo?: string; senderName?: string }): CompanyType => {
   if (inv.company) return normalizeCompany(inv.company);
   if (inv.invNo?.startsWith('AHPL') || inv.senderName?.includes('Healthcare')) return 'HPL';

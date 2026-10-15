@@ -113,6 +113,10 @@ export interface ThermocolInvoice {
   };
   cancelReason?: string;
   cancelNotes?: string;
+  id?: string;
+  type?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface InwardGridRow {

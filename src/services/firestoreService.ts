@@ -235,7 +235,8 @@ export const subscribeToAllIchOperations = (
         const id = docSnap.id;
         if (!d) return;
 
-        if (d.type === 'INVOICE' || (d.invNo && d.grandTotal !== undefined)) {
+        const isInvoice = (d.type === 'INVOICE' || (d.invNo && d.grandTotal !== undefined && d.partyName)) && d.type !== 'INWARD' && d.invNo !== 'Opening stock';
+        if (isInvoice) {
           let invNo = d.invNo || id;
           if (!invNo.includes('/') && invNo.includes('_26')) {
             invNo = invNo.replace(/_26$/, '/26');
@@ -298,6 +299,95 @@ export const subscribeToAllIchOperations = (
 };
 
 // ==========================================
+// DEEP SANITIZER FOR FIRESTORE (Removes all undefined fields recursively)
+// ==========================================
+export const deepSanitizeForFirestore = (obj: any): any => {
+  if (obj === null || obj === undefined) return null;
+  if (typeof obj !== 'object') return obj;
+  if (obj instanceof Date) return obj.toISOString();
+  if (Array.isArray(obj)) {
+    return obj
+      .filter((item) => item !== undefined)
+      .map((item) => deepSanitizeForFirestore(item));
+  }
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      clean[key] = deepSanitizeForFirestore(value);
+    }
+  }
+  return clean;
+};
+
+// ==========================================
+// DIRECT FIRESTORE QUERY FOR INVOICES ('ich_operations')
+// ==========================================
+export const fetchInvoicesFromIchOperations = async (): Promise<ThermocolInvoice[]> => {
+  try {
+    console.log(`[Firestore Direct] Querying all invoices from collection: ${COLLECTIONS.OPERATIONS}`);
+    const colRef = collection(db, COLLECTIONS.OPERATIONS);
+    const snapshot = await getDocs(colRef);
+    const invoicesMap = new Map<string, ThermocolInvoice>();
+
+    snapshot.forEach((docSnap) => {
+      const d = docSnap.data();
+      const id = docSnap.id;
+      if (!d) return;
+
+      const isInvoice = (d.type === 'INVOICE' || (d.invNo && d.grandTotal !== undefined && d.partyName)) && d.type !== 'INWARD' && d.invNo !== 'Opening stock';
+      if (isInvoice) {
+        let invNo = d.invNo || id;
+        if (!invNo.includes('/') && invNo.includes('_26')) {
+          invNo = invNo.replace(/_26$/, '/26');
+        }
+        const company = d.company || (invNo.startsWith('AHPL') ? 'HPL' : 'AIL');
+        invoicesMap.set(invNo, {
+          ...d as any,
+          invNo,
+          company,
+          items: Array.isArray(d.items) ? d.items : [],
+          totalTaxable: String(d.totalTaxable || '0'),
+          totalGst: String(d.totalGst || '0'),
+          grandTotal: String(d.grandTotal || '0'),
+          totalQty: Number(d.totalQty) || 0,
+          totalCases: Number(d.totalCases) || 0,
+          date: d.date || (d.createdAt ? d.createdAt.split('T')[0] : new Date().toISOString().split('T')[0])
+        });
+      }
+    });
+
+    // Secondary fallback to packing_outwards if ich_operations yielded 0 invoices
+    if (invoicesMap.size === 0) {
+      try {
+        const snapOut = await getDocs(collection(db, COLLECTIONS.PACKING_OUTWARDS));
+        snapOut.forEach((docSnap) => {
+          const d = docSnap.data();
+          if (d && (d.invNo || d.items)) {
+            let invNo = d.invNo || docSnap.id;
+            invoicesMap.set(invNo, { ...d as any, invNo, items: Array.isArray(d.items) ? d.items : [] });
+          }
+        });
+      } catch (e) {
+        // non-blocking
+      }
+    }
+
+    const result = Array.from(invoicesMap.values()).sort((a, b) => {
+      const timeA = new Date(a.date || a.createdAt || 0).getTime();
+      const timeB = new Date(b.date || b.createdAt || 0).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return b.invNo.localeCompare(a.invNo);
+    });
+
+    console.log(`[Firestore Direct] Successfully retrieved ${result.length} invoices from ich_operations`);
+    return result;
+  } catch (err) {
+    console.error('[Firestore Direct] Error fetching invoices from ich_operations:', err);
+    return [];
+  }
+};
+
+// ==========================================
 // EXPLICIT getDocs DATA LOADER FOR ich_operations (APP STARTUP & REFRESH)
 // ==========================================
 export const fetchIchOperationsWithGetDocs = async (): Promise<{
@@ -329,12 +419,25 @@ export const fetchIchOperationsWithGetDocs = async (): Promise<{
     const id = docSnap.id;
     if (!d) return;
 
-    if (d.type === 'INVOICE' || (d.invNo && d.grandTotal !== undefined)) {
+    const isInvoice = (d.type === 'INVOICE' || (d.invNo && d.grandTotal !== undefined && d.partyName)) && d.type !== 'INWARD' && d.invNo !== 'Opening stock';
+    if (isInvoice) {
       let invNo = d.invNo || id;
       if (!invNo.includes('/') && invNo.includes('_26')) {
         invNo = invNo.replace(/_26$/, '/26');
       }
-      invoicesMap.set(invNo, { ...d as ThermocolInvoice, invNo });
+      const company = d.company || (invNo.startsWith('AHPL') ? 'HPL' : 'AIL');
+      invoicesMap.set(invNo, {
+        ...d as any,
+        invNo,
+        company,
+        items: Array.isArray(d.items) ? d.items : [],
+        totalTaxable: String(d.totalTaxable || '0'),
+        totalGst: String(d.totalGst || '0'),
+        grandTotal: String(d.grandTotal || '0'),
+        totalQty: Number(d.totalQty) || 0,
+        totalCases: Number(d.totalCases) || 0,
+        date: d.date || (d.createdAt ? d.createdAt.split('T')[0] : new Date().toISOString().split('T')[0])
+      });
     }
 
     if (d.type === 'INWARD' || d.grNo || (d.initialQty !== undefined && d.availableQty !== undefined)) {
@@ -1286,8 +1389,38 @@ export const subscribeToThermocolAudits = (
   };
 };
 
+export const saveCompanyConfigToFirestore = async (senderAIL: any, senderHPL: any): Promise<void> => {
+  const docRef = doc(db, COLLECTIONS.TH_SEQUENCES, 'company_config');
+  await setDoc(docRef, {
+    senderAIL,
+    senderHPL,
+    updatedAt: new Date().toISOString()
+  }, { merge: true });
+};
+
+export const subscribeToCompanyConfig = (
+  callback: (config: { senderAIL?: any; senderHPL?: any }) => void
+) => {
+  const docRef = doc(db, COLLECTIONS.TH_SEQUENCES, 'company_config');
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        callback({
+          senderAIL: data.senderAIL,
+          senderHPL: data.senderHPL
+        });
+      }
+    },
+    (err) => {
+      console.warn('Company Config sync error:', err);
+    }
+  );
+};
+
 export const subscribeToThermocolSequences = (
-  callback: (seq: { seqAIL: number; seqHPL: number }) => void
+  callback: (seq: { seqAIL: number; seqHPL: number; challanSeqAIL: number; challanSeqHPL: number }) => void
 ) => {
   const docRef = doc(db, COLLECTIONS.TH_SEQUENCES, 'current_counters');
   return onSnapshot(
@@ -1297,7 +1430,9 @@ export const subscribeToThermocolSequences = (
         const data = docSnap.data();
         callback({
           seqAIL: Number(data.seqAIL) || 392,
-          seqHPL: Number(data.seqHPL) || 1
+          seqHPL: Number(data.seqHPL) || 1,
+          challanSeqAIL: Number(data.challanSeqAIL) || 1,
+          challanSeqHPL: Number(data.challanSeqHPL) || 1
         });
       }
     },
@@ -1344,19 +1479,85 @@ export const saveThermocolInwardsBatchToFirestore = async (inwards: ThermocolInw
 };
 
 export const saveThermocolInvoiceToFirestore = async (invoice: ThermocolInvoice): Promise<string> => {
-  const safeId = invoice.invNo.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const cleanData = {
-    ...invoice,
-    type: 'INVOICE',
-    updatedAt: new Date().toISOString()
-  };
+  if (!invoice || !invoice.invNo) {
+    throw new Error('Cannot save invoice without valid invNo');
+  }
 
-  // Mandatory write to packing_outwards, ich_th_invoices, and ich_operations
-  const batch = writeBatch(db);
-  batch.set(doc(db, COLLECTIONS.PACKING_OUTWARDS, safeId), cleanData, { merge: true });
-  batch.set(doc(db, COLLECTIONS.TH_INVOICES, safeId), cleanData, { merge: true });
-  batch.set(doc(db, COLLECTIONS.OPERATIONS, safeId), cleanData, { merge: true });
-  await batch.commit();
+  const safeId = invoice.invNo.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  // Sanitize line items to ensure numbers, strings, and no undefined properties
+  const sanitizedItems = (invoice.items || []).map((it, idx) => ({
+    id: it.id || `item_${idx}_${Date.now()}`,
+    productId: it.productId || '',
+    productName: it.productName || '',
+    hsnCode: it.hsnCode || '3923',
+    packSize: it.packSize || '',
+    packSizeMultiple: Number(it.packSizeMultiple) || 1,
+    cases: Number(it.cases) || 1,
+    qty: Number(it.qty) || 0,
+    rate: Number(it.rate) || 0,
+    weight: Number(it.weight) || 0,
+    cft: Number(it.cft) || 0,
+    taxableValue: it.taxableValue !== undefined ? String(it.taxableValue) : '0',
+    gstValue: it.gstValue !== undefined ? String(it.gstValue) : '0',
+    totalValue: it.totalValue !== undefined ? String(it.totalValue) : '0',
+    batch: it.batch ? String(it.batch).trim() : '',
+    exp: it.exp ? String(it.exp).trim() : ''
+  }));
+
+  const cleanPayload = deepSanitizeForFirestore({
+    ...invoice,
+    items: sanitizedItems,
+    type: 'INVOICE',
+    invNo: invoice.invNo,
+    company: invoice.company || (invoice.invNo.startsWith('AHPL') ? 'HPL' : 'AIL'),
+    date: invoice.date || new Date().toISOString().split('T')[0],
+    partyName: invoice.partyName || '',
+    partyAddress: invoice.partyAddress || '',
+    partyGstin: invoice.partyGstin || '',
+    partyCity: invoice.partyCity || '',
+    partyState: invoice.partyState || '',
+    partyPincode: invoice.partyPincode || '',
+    totalTaxable: String(invoice.totalTaxable || '0'),
+    totalGst: String(invoice.totalGst || '0'),
+    grandTotal: String(invoice.grandTotal || '0'),
+    totalQty: Number(invoice.totalQty) || 0,
+    totalCases: Number(invoice.totalCases) || 0,
+    totalWeight: Number(invoice.totalWeight) || 0,
+    totalCft: Number(invoice.totalCft) || 0,
+    senderName: invoice.senderName || '',
+    senderAddress: invoice.senderAddress || '',
+    senderGstin: invoice.senderGstin || '',
+    senderPan: invoice.senderPan || '',
+    senderCin: invoice.senderCin || '',
+    senderContact: invoice.senderContact || '',
+    senderEmail: invoice.senderEmail || '',
+    transName: invoice.transName || '',
+    transGstin: invoice.transGstin || '',
+    lrNo: invoice.lrNo || '',
+    lrDate: invoice.lrDate || '',
+    vehicleNo: invoice.vehicleNo || '',
+    taxType: invoice.taxType || (invoice.isInterState ? 'INTER_STATE_IGST' : 'LOCAL_EXEMPT'),
+    isInterState: Boolean(invoice.isInterState),
+    createdAt: invoice.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+
+  // 1. Mandatory Primary Save to 'ich_operations'
+  const opsDocRef = doc(db, COLLECTIONS.OPERATIONS, safeId);
+  await setDoc(opsDocRef, cleanPayload, { merge: true });
+  console.log(`[Firestore Success] Saved invoice ${invoice.invNo} to ${COLLECTIONS.OPERATIONS} (doc: ${safeId})`);
+
+
+  // 3. Multi-Collection Synchronization for cross-view redundancy
+  try {
+    const outwardsRef = doc(db, COLLECTIONS.PACKING_OUTWARDS, safeId);
+    await setDoc(outwardsRef, cleanPayload, { merge: true });
+    const legacyRef = doc(db, COLLECTIONS.TH_INVOICES, safeId);
+    await setDoc(legacyRef, cleanPayload, { merge: true });
+  } catch (secErr) {
+    console.warn('[Firestore Notice] Secondary outwards sync:', secErr);
+  }
 
   return safeId;
 };
@@ -1710,17 +1911,24 @@ export const clearThermocolCancelledAuditsFromFirestore = async (): Promise<void
   }
 };
 
-export const saveThermocolSequencesToFirestore = async (seqAIL: number, seqHPL: number): Promise<void> => {
+export const saveThermocolSequencesToFirestore = async (
+  seqAIL: number, 
+  seqHPL: number, 
+  challanSeqAIL: number = 1, 
+  challanSeqHPL: number = 1
+): Promise<void> => {
   const docRef = doc(db, COLLECTIONS.TH_SEQUENCES, 'current_counters');
   await setDoc(docRef, {
     seqAIL,
     seqHPL,
+    challanSeqAIL,
+    challanSeqHPL,
     updatedAt: new Date().toISOString()
   }, { merge: true });
 
   try {
     const pmRef = doc(db, COLLECTIONS.PACKING_MASTER, 'sequences');
-    await setDoc(pmRef, { seqAIL, seqHPL, updatedAt: new Date().toISOString() }, { merge: true });
+    await setDoc(pmRef, { seqAIL, seqHPL, challanSeqAIL, challanSeqHPL, updatedAt: new Date().toISOString() }, { merge: true });
   } catch (err) {
     console.warn('packing_master sequence sync error:', err);
   }
@@ -1728,7 +1936,7 @@ export const saveThermocolSequencesToFirestore = async (seqAIL: number, seqHPL: 
   // Sync to thermocol_packing collection
   try {
     const tpRef = doc(db, COLLECTIONS.THERMOCOL_PACKING, 'sequences');
-    await setDoc(tpRef, { seqAIL, seqHPL, updatedAt: new Date().toISOString() }, { merge: true });
+    await setDoc(tpRef, { seqAIL, seqHPL, challanSeqAIL, challanSeqHPL, updatedAt: new Date().toISOString() }, { merge: true });
   } catch (err) {
     console.warn('thermocol_packing sequence sync error:', err);
   }
@@ -1787,6 +1995,8 @@ export const syncThermocolPackingStateToFirestore = async (payload: {
   audits?: InvoiceAuditLog[];
   seqAIL?: number;
   seqHPL?: number;
+  challanSeqAIL?: number;
+  challanSeqHPL?: number;
 }): Promise<void> => {
   try {
     const batch = writeBatch(db);
@@ -1813,10 +2023,12 @@ export const syncThermocolPackingStateToFirestore = async (payload: {
     if (payload.audits) {
       batch.set(doc(db, COLLECTIONS.THERMOCOL_PACKING, 'audits'), { items: payload.audits, updatedAt: nowIso });
     }
-    if (payload.seqAIL !== undefined || payload.seqHPL !== undefined) {
+    if (payload.seqAIL !== undefined || payload.seqHPL !== undefined || payload.challanSeqAIL !== undefined || payload.challanSeqHPL !== undefined) {
       batch.set(doc(db, COLLECTIONS.THERMOCOL_PACKING, 'sequences'), {
         seqAIL: payload.seqAIL ?? 392,
         seqHPL: payload.seqHPL ?? 1,
+        challanSeqAIL: payload.challanSeqAIL ?? 1,
+        challanSeqHPL: payload.challanSeqHPL ?? 1,
         updatedAt: nowIso
       });
     }

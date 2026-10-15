@@ -1,6 +1,7 @@
 import React, { Component, useState, useMemo, useEffect, ReactNode } from 'react';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { saveThermocolInvoiceToFirestore } from '../../services/firestoreService';
 import { 
   FileText, Calendar, Building2, Package, Truck, 
   CheckCircle2, AlertCircle, Plus, Trash2, Scale, 
@@ -27,6 +28,7 @@ import {
   CompanyType,
   COMPANY_CONFIGS,
   formatInvNoForCompany,
+  formatDeliveryChallanNoForCompany,
   normalizeCompany,
   DEFAULT_SENDER,
   DEFAULT_HPL_SENDER
@@ -120,13 +122,15 @@ interface OutwardOrderEntryFormProps {
   inwards: ThermocolInward[];
   invoices: ThermocolInvoice[];
   invoiceSeq: number;
+  challanSeq: number;
   sender: SenderConfig;
   company?: CompanyType;
   onSaveInvoice: (
     newInvoice: ThermocolInvoice, 
     updatedInwards: ThermocolInward[], 
     updatedDemands: ClientDemand[], 
-    nextSeq: number
+    nextSeq: number,
+    isChallan: boolean
   ) => void;
   onNavigateToInward?: () => void;
   onNavigateToMasters?: () => void;
@@ -158,6 +162,7 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
   inwards,
   invoices,
   invoiceSeq,
+  challanSeq,
   sender,
   company = 'AIL',
   onSaveInvoice,
@@ -169,7 +174,6 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
   // AIL: AILICH-392/26, AILICH-393/26, etc.
   // HPL: AHPLICH-001/26, AHPLICH-002/26, etc.
   const targetCompany: CompanyType = normalizeCompany(company);
-  const currentInvNo = formatInvNoForCompany(targetCompany, invoiceSeq);
 
   // Strict multi-company segregation & deduplication
   const companyParties = useMemo(() => {
@@ -449,6 +453,11 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
   }, [taxModeOverride, autoIsInterState]);
 
   const taxRule = useMemo(() => getTaxRuleInfo(effectiveIsInterState), [effectiveIsInterState]);
+
+  const isChallan = !effectiveIsInterState;
+  const currentInvNo = isChallan
+    ? formatDeliveryChallanNoForCompany(targetCompany, challanSeq)
+    : formatInvNoForCompany(targetCompany, invoiceSeq);
 
   // Wipe all inputs clean and reset form completely blank
   const handleResetForm = () => {
@@ -842,32 +851,22 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
       return dem;
     });
 
-    const nextSeq = invoiceSeq + 1;
+    const nextSeq = isChallan ? challanSeq + 1 : invoiceSeq + 1;
 
     // DIRECT MANDATORY FIREBASE FIRESTORE SYNC:
-    // Execute addDoc directly on "ich_operations" collection
+    // Execute saveThermocolInvoiceToFirestore which deep-sanitizes and persists to "ich_operations"
     try {
-      await addDoc(collection(db, "ich_operations"), {
-        ...newInvoice,
-        type: 'INVOICE',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-      await addDoc(collection(db, "packing_outwards"), {
-        ...newInvoice,
-        type: 'INVOICE',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
+      await saveThermocolInvoiceToFirestore(newInvoice);
+      console.log(`[Firestore Success] Saved invoice ${currentInvNo} to ich_operations successfully!`);
     } catch (firestoreErr) {
-      console.warn('[Firestore] Direct addDoc to ich_operations error:', firestoreErr);
+      console.error('[Firestore Error] Failed saving invoice to ich_operations:', firestoreErr);
     }
 
     // Trigger parent save callback for real-time state sync across all UI components
-    onSaveInvoice(newInvoice, updatedInwards, updatedDemands, nextSeq);
+    onSaveInvoice(newInvoice, updatedInwards, updatedDemands, nextSeq, isChallan);
 
     setFormMsg({ 
-      text: `Tax Invoice ${currentInvNo} successfully created, saved to Firebase Firestore, stock deducted via FIFO, and monthly demand updated!`, 
+      text: `${isChallan ? 'Delivery Challan' : 'Tax Invoice'} ${currentInvNo} successfully created, saved to Firebase Firestore, stock deducted via FIFO, and monthly demand updated!`, 
       isError: false 
     });
 

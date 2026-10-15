@@ -78,6 +78,8 @@ import {
   subscribeToThermocolDemands,
   subscribeToThermocolAudits,
   subscribeToThermocolSequences,
+  saveCompanyConfigToFirestore,
+  subscribeToCompanyConfig,
   saveThermocolInwardsBatchToFirestore,
   saveThermocolInvoiceToFirestore,
   deleteThermocolInvoiceFromFirestore,
@@ -96,7 +98,8 @@ import {
   saveThermocolSequencesToFirestore,
   subscribeToThermocolPackingStore,
   syncThermocolPackingStateToFirestore,
-  fetchIchOperationsWithGetDocs
+  fetchIchOperationsWithGetDocs,
+  fetchInvoicesFromIchOperations
 } from '../services/firestoreService';
 import { db, collection, addDoc } from '../firebase';
 
@@ -131,11 +134,21 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
 
   const activeSender = selectedCompany === 'HPL' ? senderHPL : senderAIL;
 
-  const handleUpdateSender = (updated: SenderConfig) => {
+  const handleUpdateSender = async (updated: SenderConfig) => {
+    let newAIL = senderAIL;
+    let newHPL = senderHPL;
     if (selectedCompany === 'HPL') {
+      newHPL = updated;
       setSenderHPL(updated);
     } else {
+      newAIL = updated;
       setSenderAIL(updated);
+    }
+    try {
+      await saveCompanyConfigToFirestore(newAIL, newHPL);
+      console.log('[Firestore Success] Saved company config / logo to Firestore permanently!');
+    } catch (err) {
+      console.warn('[Firestore Error] Failed saving company config:', err);
     }
   };
 
@@ -155,8 +168,11 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
   const [invoices, setInvoices] = useState<ThermocolInvoice[]>([]);
   const [invoiceSeqAIL, setInvoiceSeqAIL] = useState<number>(392);
   const [invoiceSeqHPL, setInvoiceSeqHPL] = useState<number>(1);
+  const [challanSeqAIL, setChallanSeqAIL] = useState<number>(1);
+  const [challanSeqHPL, setChallanSeqHPL] = useState<number>(1);
 
   const activeInvoiceSeq = selectedCompany === 'HPL' ? invoiceSeqHPL : invoiceSeqAIL;
+  const activeChallanSeq = selectedCompany === 'HPL' ? challanSeqHPL : challanSeqAIL;
   const currentSeriesDisplay = formatInvNoForCompany(selectedCompany, activeInvoiceSeq);
 
   const [invoiceAudits, setInvoiceAudits] = useState<InvoiceAuditLog[]>([]);
@@ -170,17 +186,32 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
     const fetchExistingIchOperations = async () => {
       try {
         console.log('[Firestore Startup] Explicit getDocs fetching ich_operations in PackingMaterialView...');
-        const res = await fetchIchOperationsWithGetDocs();
+        const [res, directInvoices] = await Promise.all([
+          fetchIchOperationsWithGetDocs(),
+          fetchInvoicesFromIchOperations()
+        ]);
         if (!isMounted) return;
+
         if (res.inwards && res.inwards.length > 0) {
           setInwards(res.inwards.map(i => ({ ...i, company: normalizeCompany(i.company) })));
         }
-        if (res.invoices && res.invoices.length > 0) {
-          setInvoices(res.invoices.map(inv => ({
+
+        // Merge invoices from both parsers for maximum resilience
+        const invoiceMap = new Map<string, ThermocolInvoice>();
+        (res.invoices || []).forEach(inv => invoiceMap.set(inv.invNo, inv));
+        (directInvoices || []).forEach(inv => invoiceMap.set(inv.invNo, inv));
+
+        if (invoiceMap.size > 0) {
+          const mergedInvoices = Array.from(invoiceMap.values()).map(inv => ({
             ...inv,
             senderName: (!inv.senderName || inv.senderName.includes('ICH Indore') || inv.senderName.includes('Posh Enterprises')) ? DEFAULT_SENDER.name : inv.senderName
-          })));
+          }));
+          setInvoices(mergedInvoices);
+          if (mergedInvoices.length > 0) {
+            setSelectedPreviewInv(prev => prev || mergedInvoices[0].invNo);
+          }
         }
+
         if (res.audits && res.audits.length > 0) {
           setInvoiceAudits(res.audits);
         }
@@ -289,7 +320,14 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
       if (seq) {
         if (seq.seqAIL !== undefined) setInvoiceSeqAIL(seq.seqAIL);
         if (seq.seqHPL !== undefined) setInvoiceSeqHPL(seq.seqHPL);
+        if (seq.challanSeqAIL !== undefined) setChallanSeqAIL(seq.challanSeqAIL);
+        if (seq.challanSeqHPL !== undefined) setChallanSeqHPL(seq.challanSeqHPL);
       }
+    });
+
+    const unsubCompanyConfig = subscribeToCompanyConfig((config) => {
+      if (config.senderAIL) setSenderAIL(config.senderAIL);
+      if (config.senderHPL) setSenderHPL(config.senderHPL);
     });
 
     return () => {
@@ -302,6 +340,7 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
       unsubDemands();
       unsubAudits();
       unsubSeqs();
+      unsubCompanyConfig();
     };
   }, []);
 
@@ -314,7 +353,9 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
     newInvs = invoices,
     newSeqAIL = invoiceSeqAIL,
     newSeqHPL = invoiceSeqHPL,
-    newAudits = invoiceAudits
+    newAudits = invoiceAudits,
+    newChallanSeqAIL = challanSeqAIL,
+    newChallanSeqHPL = challanSeqHPL
   ) => {
     try {
       await Promise.all([
@@ -324,7 +365,8 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
         saveThermocolTransportersToFirestore(newTrans),
         saveThermocolDemandsToFirestore(newDemands),
         saveThermocolAuditsToFirestore(newAudits),
-        saveThermocolSequencesToFirestore(newSeqAIL, newSeqHPL),
+        saveThermocolSequencesToFirestore(newSeqAIL, newSeqHPL, newChallanSeqAIL, newChallanSeqHPL),
+        saveCompanyConfigToFirestore(senderAIL, senderHPL),
         syncThermocolPackingStateToFirestore({
           products: newProds,
           parties: newParts,
@@ -334,7 +376,9 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
           invoices: newInvs,
           audits: newAudits,
           seqAIL: newSeqAIL,
-          seqHPL: newSeqHPL
+          seqHPL: newSeqHPL,
+          challanSeqAIL: newChallanSeqAIL,
+          challanSeqHPL: newChallanSeqHPL
         })
       ]);
       for (const inv of newInvs) {
@@ -436,11 +480,12 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
   };
 
   // Handle invoice submission from OutwardOrderEntryForm
-  const handleSaveInvoiceFromForm = (
+  const handleSaveInvoiceFromForm = async (
     newInvoice: ThermocolInvoice,
     updatedInwards: ThermocolInward[],
     updatedDemands: ClientDemand[],
-    nextSeq: number
+    nextSeq: number,
+    isChallan: boolean = false
   ) => {
     const invComp = getInvoiceCompany(newInvoice);
     setSelectedCompany(invComp);
@@ -453,12 +498,25 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
 
     let nextSeqAIL = invoiceSeqAIL;
     let nextSeqHPL = invoiceSeqHPL;
-    if (invComp === 'HPL') {
-      nextSeqHPL = nextSeq;
-      setInvoiceSeqHPL(nextSeq);
+    let nextChallanAIL = challanSeqAIL;
+    let nextChallanHPL = challanSeqHPL;
+
+    if (isChallan) {
+      if (invComp === 'HPL') {
+        nextChallanHPL = nextSeq;
+        setChallanSeqHPL(nextSeq);
+      } else {
+        nextChallanAIL = nextSeq;
+        setChallanSeqAIL(nextSeq);
+      }
     } else {
-      nextSeqAIL = nextSeq;
-      setInvoiceSeqAIL(nextSeq);
+      if (invComp === 'HPL') {
+        nextSeqHPL = nextSeq;
+        setInvoiceSeqHPL(nextSeq);
+      } else {
+        nextSeqAIL = nextSeq;
+        setInvoiceSeqAIL(nextSeq);
+      }
     }
 
     const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
@@ -484,24 +542,57 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
     const updatedAudits = [newCreateAudit, ...invoiceAudits.filter(a => a.id !== newCreateAudit.id)];
     setInvoiceAudits(updatedAudits);
 
-    saveThermocolInvoiceToFirestore(newInvoice);
+    // Persist directly to Firestore ('ich_operations')
+    try {
+      await saveThermocolInvoiceToFirestore(newInvoice);
+      await addThermocolAuditLog(newCreateAudit);
+      await persistStorage(
+        products, 
+        parties, 
+        transporters, 
+        updatedDemands, 
+        updatedInwards, 
+        updatedInvoices, 
+        nextSeqAIL, 
+        nextSeqHPL, 
+        updatedAudits,
+        nextChallanAIL, 
+        nextChallanHPL
+      );
+      console.log(`[Invoice Save Success] Invoice ${newInvoice.invNo} successfully saved and persisted to ich_operations!`);
+    } catch (saveErr) {
+      console.error('[Invoice Save Error] Error persisting invoice to Firestore:', saveErr);
+    }
 
-    persistStorage(
-      products, 
-      parties, 
-      transporters, 
-      updatedDemands, 
-      updatedInwards, 
-      updatedInvoices, 
-      nextSeqAIL, 
-      nextSeqHPL, 
-      updatedAudits
-    );
-    addThermocolAuditLog(newCreateAudit);
     setSelectedPreviewInv(newInvoice.invNo);
     // Trigger prominent success confirmation popup with newly generated Invoice Number
     setCreatedInvoiceSuccess(newInvoice);
   };
+
+  // DIRECT FIRESTORE INVOICES QUERY ON TAB CHANGE (Print Preview & Reports)
+  useEffect(() => {
+    if (activeTab === 'previewPrintTab' || activeTab === 'reportTab') {
+      console.log(`[Firestore Tab Sync] Direct query for invoices in ${activeTab}...`);
+      fetchInvoicesFromIchOperations().then(loadedInvoices => {
+        if (loadedInvoices && loadedInvoices.length > 0) {
+          setInvoices(prev => {
+            const map = new Map<string, ThermocolInvoice>();
+            loadedInvoices.forEach(inv => map.set(inv.invNo, inv));
+            prev.forEach(inv => {
+              if (!map.has(inv.invNo)) map.set(inv.invNo, inv);
+            });
+            const merged = Array.from(map.values());
+            if (!selectedPreviewInv && merged.length > 0) {
+              setSelectedPreviewInv(merged[0].invNo);
+            }
+            return merged;
+          });
+        }
+      }).catch(err => {
+        console.warn('[Firestore Tab Sync] Error loading invoices directly:', err);
+      });
+    }
+  }, [activeTab]);
 
   // ----------------------------------------------------
   // Module D: Invoice Correction & Deletion with Stock Refund
@@ -2118,6 +2209,7 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
             inwards={activeInwards}
             invoices={activeInvoices}
             invoiceSeq={activeInvoiceSeq}
+            challanSeq={activeChallanSeq}
             sender={activeSender}
             company={selectedCompany}
             onSaveInvoice={handleSaveInvoiceFromForm}
@@ -2780,58 +2872,76 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
                         ) : (
                           (() => {
                             let srCounter = 1;
-                            return filteredInvoices.flatMap(inv => {
-                              const isIndore = isIndoreDestination(inv);
+                            try {
+                              return filteredInvoices.flatMap(inv => {
+                                if (!inv) return [];
+                                const isIndore = isIndoreDestination(inv);
+                                const items = Array.isArray(inv.items) ? inv.items : [];
 
-                              return inv.items.map(it => {
-                                const currentSr = srCounter++;
-                                const lineTotalWords = numberToWords(it.totalValue);
-                                return (
-                                  <tr key={inv.invNo + '_' + it.id} className="hover:bg-slate-50">
-                                    <td className="py-2 px-3 font-mono font-bold text-slate-700">{currentSr}</td>
-                                    <td className="py-2 px-3 font-mono text-blue-700 font-bold">{inv.invNo}</td>
-                                    <td className="py-2 px-3 font-mono">{inv.date ? new Date(inv.date).toLocaleDateString('en-IN') : '-'}</td>
-                                    <td className="py-2 px-3 font-semibold text-slate-900">{inv.partyName}</td>
-                                    <td className="py-2 px-3 font-mono font-bold text-slate-700">TAX</td>
-                                    <td className="py-2 px-3 font-mono text-slate-600">REG</td>
-                                    <td className="py-2 px-3 font-mono text-slate-600">{isIndore ? 'OTH' : 'INV'}</td>
-                                    <td className="py-2 px-3 font-mono text-slate-600">GST</td>
-                                    <td className="py-2 px-3 font-mono text-slate-600">N</td>
-                                    <td className="py-2 px-3">{it.productName} ({it.packSize})</td>
-                                    <td className="py-2 px-3 font-mono font-bold text-slate-800">{it.batch || '-'}</td>
-                                    <td className="py-2 px-3 font-mono text-slate-600">{it.hsnCode || '39239090'}</td>
-                                    <td className="py-2 px-3 text-right font-mono font-bold text-slate-800">{it.qty}</td>
-                                    <td className="py-2 px-3 text-right font-mono">₹{it.rate.toFixed(2)}</td>
-                                    <td className="py-2 px-3 text-right">
-                                      <div className="font-mono font-bold text-blue-700">₹{it.totalValue.toFixed(2)}</div>
-                                      <div className="text-[10px] text-slate-500 font-sans italic">{lineTotalWords}</div>
-                                    </td>
-                                    <td className="py-2 px-3 font-mono font-bold text-slate-800">{inv.vehicleNo || '-'}</td>
-                                    <td className="py-2 px-3 text-center">
-                                      <div className="flex items-center justify-center gap-1">
-                                        <button
-                                          onClick={() => {
-                                            setSelectedPreviewInv(inv.invNo);
-                                            setModalPreviewInvoice(inv);
-                                          }}
-                                          className="p-1 text-blue-600 hover:bg-blue-100 rounded transition cursor-pointer"
-                                          title="Invoice Preview"
-                                        >
-                                          <FileText className="w-3.5 h-3.5" />
-                                        </button>
-                                        <button
-                                          onClick={() => handleDeleteInvoice(inv.invNo)}
-                                          className="p-1 text-rose-600 hover:bg-rose-100 rounded transition cursor-pointer"
-                                          title="Cancel / Void Invoice and Refund Stock"
-                                        >
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
+                                return items.map(it => {
+                                  if (!it) return null;
+                                  const currentSr = srCounter++;
+                                  const rateNum = Number(it.rate) || 0;
+                                  const totalValNum = Number(it.totalValue) || 0;
+                                  const lineTotalWords = numberToWords(totalValNum);
+                                  return (
+                                    <tr key={(inv.invNo || 'inv') + '_' + (it.id || Math.random())} className="hover:bg-slate-50">
+                                      <td className="py-2 px-3 font-mono font-bold text-slate-700">{currentSr}</td>
+                                      <td className="py-2 px-3 font-mono text-blue-700 font-bold">{inv.invNo || '-'}</td>
+                                      <td className="py-2 px-3 font-mono">{inv.date ? new Date(inv.date).toLocaleDateString('en-IN') : '-'}</td>
+                                      <td className="py-2 px-3 font-semibold text-slate-900">{inv.partyName || '-'}</td>
+                                      <td className="py-2 px-3 font-mono font-bold text-slate-700">TAX</td>
+                                      <td className="py-2 px-3 font-mono text-slate-600">REG</td>
+                                      <td className="py-2 px-3 font-mono text-slate-600">{isIndore ? 'OTH' : 'INV'}</td>
+                                      <td className="py-2 px-3 font-mono text-slate-600">GST</td>
+                                      <td className="py-2 px-3 font-mono text-slate-600">N</td>
+                                      <td className="py-2 px-3">{it.productName || 'Product'} ({it.packSize || '-'})</td>
+                                      <td className="py-2 px-3 font-mono font-bold text-slate-800">{it.batch || '-'}</td>
+                                      <td className="py-2 px-3 font-mono text-slate-600">{it.hsnCode || '39239090'}</td>
+                                      <td className="py-2 px-3 text-right font-mono font-bold text-slate-800">{it.qty ?? 0}</td>
+                                      <td className="py-2 px-3 text-right font-mono">₹{rateNum.toFixed(2)}</td>
+                                      <td className="py-2 px-3 text-right">
+                                        <div className="font-mono font-bold text-blue-700">₹{totalValNum.toFixed(2)}</div>
+                                        <div className="text-[10px] text-slate-500 font-sans italic">{lineTotalWords}</div>
+                                      </td>
+                                      <td className="py-2 px-3 font-mono font-bold text-slate-800">{inv.vehicleNo || '-'}</td>
+                                      <td className="py-2 px-3 text-center">
+                                        <div className="flex items-center justify-center gap-1">
+                                          <button
+                                            onClick={() => {
+                                              if (inv.invNo) {
+                                                setSelectedPreviewInv(inv.invNo);
+                                                setModalPreviewInvoice(inv);
+                                              }
+                                            }}
+                                            className="p-1 text-blue-600 hover:bg-blue-100 rounded transition cursor-pointer"
+                                            title="Invoice Preview"
+                                          >
+                                            <FileText className="w-3.5 h-3.5" />
+                                          </button>
+                                          <button
+                                            onClick={() => inv.invNo && handleDeleteInvoice(inv.invNo)}
+                                            className="p-1 text-rose-600 hover:bg-rose-100 rounded transition cursor-pointer"
+                                            title="Cancel / Void Invoice and Refund Stock"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                }).filter(Boolean);
                               });
-                            });
+                            } catch (err) {
+                              console.error('[Detailed Report Render Error]:', err);
+                              return (
+                                <tr>
+                                  <td colSpan={17} className="py-6 text-center text-rose-500 italic">
+                                    Error rendering detailed report items. Please check console.
+                                  </td>
+                                </tr>
+                              );
+                            }
                           })()
                         )}
                       </tbody>

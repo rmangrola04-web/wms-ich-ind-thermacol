@@ -446,10 +446,10 @@ export const OutwardStockTransferInvoiceDoc: React.FC<Props> = ({ invoice }) => 
             </div>
 
             {/* 4. FOOTER SUMMARY SECTION (Rendered on Last Page) */}
-            {isLastPage ? (
+            {isLastPage && (
               <div 
                 id="taxInvoiceFooter"
-                className="tax-invoice-footer border border-slate-400 rounded-xs bg-[#fbfcfd] p-2 text-[7.5pt] space-y-2"
+                className="tax-invoice-footer border border-slate-400 rounded-xs bg-[#fbfcfd] p-2 text-[7.5pt] space-y-2 mb-2"
               >
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
                   <div className="sm:col-span-7 space-y-2 border-b sm:border-b-0 sm:border-r border-slate-300 pb-2 sm:pb-0 sm:pr-3">
@@ -558,21 +558,18 @@ export const OutwardStockTransferInvoiceDoc: React.FC<Props> = ({ invoice }) => 
                     </div>
                   </div>
                 </div>
-
-                <div className="border-t border-slate-300 pt-1.5 flex items-center justify-between text-[7pt] text-slate-700">
-                  <p className="font-semibold italic">
-                    <b>Declaration:</b> We certify that this consignment contains Stationary &amp; Packing Material for office use Not For Sale.
-                  </p>
-                  <span className="text-[7pt] font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-300">
-                    Page {pageNumber} of {totalPages}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="border border-slate-300 rounded-xs bg-[#fbfcfd] p-2 text-center text-[7.5pt] text-slate-500 italic">
-                (Continued on next page...)
               </div>
             )}
+
+            {/* Universal Page Footer with Declaration & Dynamic Page Number */}
+            <div className="border-t border-slate-300 pt-1.5 flex items-center justify-between text-[7pt] text-slate-700">
+              <p className="font-semibold italic">
+                <b>Declaration:</b> We certify that this consignment contains Stationary &amp; Packing Material for office use Not For Sale.
+              </p>
+              <span className="text-[7pt] font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-300">
+                Page {pageNumber} of {totalPages}
+              </span>
+            </div>
           </div>
         );
       })}

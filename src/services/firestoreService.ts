@@ -186,9 +186,9 @@ export const subscribeToOperations = (
       snapshot.forEach((docSnap) => {
         const item = docSnap.data() as any;
         if (!item) return;
-        const isInvoice = item.type === 'INVOICE' || (item.invNo && item.grandTotal !== undefined && item.partyName);
+        const isInvoice = item.type === 'INVOICE' || item.type === 'CHALLAN' || item.invNo || (item.grandTotal !== undefined && item.partyName) || (item.invNo && (item.invNo.startsWith('AIL') || item.invNo.startsWith('AHPL'))) || item.items;
         if (isInvoice) return;
-        if (item.operationType || item.gateId || item.bayNo || item.driverName || (item.vehicleNo && !item.invNo && item.type !== 'INVOICE')) {
+        if (item.operationType || item.gateId || item.bayNo || item.driverName || (item.vehicleNo && !item.invNo && item.type !== 'INVOICE' && item.type !== 'CHALLAN')) {
           list.push({ ...item, id: docSnap.id });
         }
       });
@@ -196,10 +196,12 @@ export const subscribeToOperations = (
       callback(list);
     },
     (err) => {
-      console.error(`[Firestore Error] ${COLLECTIONS.OPERATIONS} sync error:`, err?.code, err?.message);
-      if (err?.code === 'unavailable') {
+      if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota exceeded')) {
+        console.warn(`[Firestore Quota Exceeded] ${COLLECTIONS.OPERATIONS} quota limit reached. Falling back to local cache.`);
+      } else if (err?.code === 'unavailable') {
         console.warn('Firestore Operations offline; serving from local cache.');
       } else {
+        console.error(`[Firestore Error] ${COLLECTIONS.OPERATIONS} sync error:`, err?.code, err?.message);
         handleFirestoreError(err, OperationType.GET, COLLECTIONS.OPERATIONS);
       }
       if (onError) onError(err);
@@ -238,8 +240,8 @@ export const subscribeToAllIchOperations = (
         const id = docSnap.id;
         if (!d) return;
 
-        const isInvoice = (d.type === 'INVOICE' || (d.invNo && d.grandTotal !== undefined && d.partyName)) && d.type !== 'INWARD' && d.invNo !== 'Opening stock';
-        if (isInvoice) {
+        const isInvoice = d.type === 'INVOICE' || d.type === 'CHALLAN' || d.invNo || (d.grandTotal !== undefined && d.partyName) || (d.invNo && (d.invNo.startsWith('AIL') || d.invNo.startsWith('AHPL'))) || d.items;
+        if (isInvoice && d.type !== 'INWARD' && d.invNo !== 'Opening stock') {
           let invNo = d.invNo || id;
           if (!invNo.includes('/') && invNo.includes('_26')) {
             invNo = invNo.replace(/_26$/, '/26');
@@ -373,8 +375,12 @@ export const fetchInvoicesFromIchOperations = async (): Promise<ThermocolInvoice
 
     console.log(`[Firestore Direct] Successfully retrieved ${result.length} invoices from ich_operations`);
     return result;
-  } catch (err) {
-    console.error('[Firestore Direct] Error fetching invoices from ich_operations:', err);
+  } catch (err: any) {
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota exceeded') || String(err).includes('Quota exceeded')) {
+      console.warn('[Firestore Direct Quota Warning] Quota exceeded fetching invoices from ich_operations. Serving from local storage cache.');
+    } else {
+      console.warn('[Firestore Direct] Warning fetching invoices from ich_operations:', err);
+    }
     return [];
   }
 };
@@ -392,10 +398,11 @@ export const fetchIchOperationsWithGetDocs = async (): Promise<{
   transporters: ThermocolTransporter[];
   demands: ClientDemand[];
 }> => {
-  console.log(`[Firestore getDocs] Explicitly fetching all documents from collection: ${COLLECTIONS.OPERATIONS}`);
-  const colRef = collection(db, COLLECTIONS.OPERATIONS);
-  const snapshot = await getDocs(colRef);
-  console.log(`[Firestore getDocs] Retrieved ${snapshot.size} documents from ${COLLECTIONS.OPERATIONS}`);
+  try {
+    console.log(`[Firestore getDocs] Explicitly fetching all documents from collection: ${COLLECTIONS.OPERATIONS}`);
+    const colRef = collection(db, COLLECTIONS.OPERATIONS);
+    const snapshot = await getDocs(colRef);
+    console.log(`[Firestore getDocs] Retrieved ${snapshot.size} documents from ${COLLECTIONS.OPERATIONS}`);
 
   const inwardsMap = new Map<string, ThermocolInward>();
   const invoicesMap = new Map<string, ThermocolInvoice>();
@@ -411,8 +418,8 @@ export const fetchIchOperationsWithGetDocs = async (): Promise<{
     const id = docSnap.id;
     if (!d) return;
 
-    const isInvoice = (d.type === 'INVOICE' || (d.invNo && d.grandTotal !== undefined && d.partyName)) && d.type !== 'INWARD' && d.invNo !== 'Opening stock';
-    if (isInvoice) {
+    const isInvoice = d.type === 'INVOICE' || d.type === 'CHALLAN' || d.invNo || (d.grandTotal !== undefined && d.partyName) || (d.invNo && (d.invNo.startsWith('AIL') || d.invNo.startsWith('AHPL'))) || d.items;
+    if (isInvoice && d.type !== 'INWARD' && d.invNo !== 'Opening stock') {
       let invNo = d.invNo || id;
       if (!invNo.includes('/') && invNo.includes('_26')) {
         invNo = invNo.replace(/_26$/, '/26');
@@ -456,16 +463,33 @@ export const fetchIchOperationsWithGetDocs = async (): Promise<{
     }
   });
 
-  return {
-    operations: operationsList,
-    inwards: Array.from(inwardsMap.values()),
-    invoices: Array.from(invoicesMap.values()),
-    audits: Array.from(auditsMap.values()),
-    products: Array.from(productsMap.values()),
-    parties: Array.from(partiesMap.values()),
-    transporters: Array.from(transportersMap.values()),
-    demands: Array.from(demandsMap.values())
-  };
+    return {
+      operations: operationsList,
+      inwards: Array.from(inwardsMap.values()),
+      invoices: Array.from(invoicesMap.values()),
+      audits: Array.from(auditsMap.values()),
+      products: Array.from(productsMap.values()),
+      parties: Array.from(partiesMap.values()),
+      transporters: Array.from(transportersMap.values()),
+      demands: Array.from(demandsMap.values())
+    };
+  } catch (err: any) {
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota exceeded') || String(err).includes('Quota exceeded')) {
+      console.warn('[Firestore getDocs Quota Warning] Quota limit reached for ich_operations. Serving from local cache.');
+    } else {
+      console.warn('[Firestore getDocs Warning] Failed to fetch ich_operations with getDocs:', err);
+    }
+    return {
+      operations: [],
+      inwards: [],
+      invoices: [],
+      audits: [],
+      products: [],
+      parties: [],
+      transporters: [],
+      demands: []
+    };
+  }
 };
 
 export const addOperationWithAddDoc = async (data: any): Promise<string> => {
@@ -501,10 +525,12 @@ export const subscribeToSecurityLogs = (
       callback(list);
     },
     (err) => {
-      console.error(`[Firestore Error] ${COLLECTIONS.SECURITY_LOGS} sync error:`, err?.code, err?.message);
-      if (err?.code === 'unavailable') {
+      if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota exceeded')) {
+        console.warn(`[Firestore Quota Exceeded] ${COLLECTIONS.SECURITY_LOGS} quota limit reached. Falling back to local cache.`);
+      } else if (err?.code === 'unavailable') {
         console.warn('Firestore Security Logs offline; serving from local cache.');
       } else {
+        console.error(`[Firestore Error] ${COLLECTIONS.SECURITY_LOGS} sync error:`, err?.code, err?.message);
         handleFirestoreError(err, OperationType.GET, COLLECTIONS.SECURITY_LOGS);
       }
       if (onError) onError(err);
@@ -558,10 +584,12 @@ export const subscribeToPlanEntries = (
       callback(list);
     },
     (err) => {
-      console.error(`[Firestore Error] ${COLLECTIONS.PLAN_ENTRIES} sync error:`, err?.code, err?.message);
-      if (err?.code === 'unavailable') {
+      if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota exceeded')) {
+        console.warn(`[Firestore Quota Exceeded] ${COLLECTIONS.PLAN_ENTRIES} quota limit reached. Falling back to local cache.`);
+      } else if (err?.code === 'unavailable') {
         console.warn('Firestore Plan Entries offline; serving from local cache.');
       } else {
+        console.error(`[Firestore Error] ${COLLECTIONS.PLAN_ENTRIES} sync error:`, err?.code, err?.message);
         handleFirestoreError(err, OperationType.GET, COLLECTIONS.PLAN_ENTRIES);
       }
       if (onError) onError(err);
@@ -593,10 +621,12 @@ export const subscribeToTrackingRecords = (
       callback(list);
     },
     (err) => {
-      console.error(`[Firestore Error] ${COLLECTIONS.TRACKING_RECORDS} sync error:`, err?.code, err?.message);
-      if (err?.code === 'unavailable') {
+      if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota exceeded')) {
+        console.warn(`[Firestore Quota Exceeded] ${COLLECTIONS.TRACKING_RECORDS} quota limit reached. Falling back to local cache.`);
+      } else if (err?.code === 'unavailable') {
         console.warn('Firestore Tracking Records offline; serving from local cache.');
       } else {
+        console.error(`[Firestore Error] ${COLLECTIONS.TRACKING_RECORDS} sync error:`, err?.code, err?.message);
         handleFirestoreError(err, OperationType.GET, COLLECTIONS.TRACKING_RECORDS);
       }
       if (onError) onError(err);
@@ -622,10 +652,12 @@ export const subscribeToUsers = (
       callback(list);
     },
     (err) => {
-      console.error(`[Firestore Error] ${COLLECTIONS.USERS} sync error:`, err?.code, err?.message);
-      if (err?.code === 'unavailable') {
+      if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota exceeded')) {
+        console.warn(`[Firestore Quota Exceeded] ${COLLECTIONS.USERS} quota limit reached. Falling back to local cache.`);
+      } else if (err?.code === 'unavailable') {
         console.warn('Firestore Users offline; serving from local cache.');
       } else {
+        console.error(`[Firestore Error] ${COLLECTIONS.USERS} sync error:`, err?.code, err?.message);
         handleFirestoreError(err, OperationType.GET, COLLECTIONS.USERS);
       }
       if (onError) onError(err);
@@ -663,10 +695,12 @@ export const subscribeToMasterList = (
       }
     },
     (err) => {
-      console.error(`[Firestore Error] Master collection ${collectionName} sync error:`, err?.code, err?.message);
-      if (err?.code === 'unavailable') {
+      if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota exceeded')) {
+        console.warn(`[Firestore Quota Exceeded] Master collection ${collectionName} quota limit reached. Falling back to local cache.`);
+      } else if (err?.code === 'unavailable') {
         console.warn(`Firestore ${collectionName} offline; using local cache.`);
       } else {
+        console.error(`[Firestore Error] Master collection ${collectionName} sync error:`, err?.code, err?.message);
         handleFirestoreError(err, OperationType.GET, collectionName);
       }
       if (onError) onError(err);
@@ -1619,6 +1653,18 @@ export const deleteThermocolProductFromFirestore = async (productId: string, nam
   batch.delete(doc(db, COLLECTIONS.TH_PRODUCTS, safeId));
   batch.delete(doc(db, COLLECTIONS.TH_PRODUCTS, productId));
   await batch.commit();
+
+  if (name) {
+    try {
+      const q = query(collection(db, COLLECTIONS.TH_PRODUCTS), where("name", "==", name));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        await deleteDoc(d.ref);
+      }
+    } catch (err) {
+      console.warn('[Firestore] Error query deleting product:', err);
+    }
+  }
 };
 
 export const deleteThermocolPartyFromFirestore = async (partyName: string, company?: string): Promise<void> => {
@@ -1635,6 +1681,11 @@ export const deleteThermocolPartyFromFirestore = async (partyName: string, compa
     for (const d of snap1.docs) {
       await deleteDoc(d.ref);
     }
+    const q2 = query(collection(db, COLLECTIONS.TH_PARTIES), where("name", "==", partyName));
+    const snap2 = await getDocs(q2);
+    for (const d of snap2.docs) {
+      await deleteDoc(d.ref);
+    }
   } catch (err) {
     console.warn('[Firestore] Error query deleting customer:', err);
   }
@@ -1647,10 +1698,30 @@ export const deleteThermocolTransporterFromFirestore = async (transName: string,
   batch.delete(doc(db, COLLECTIONS.TH_TRANSPORTERS, safeId));
   batch.delete(doc(db, COLLECTIONS.PACKING_TRANSPORTERS, safeId));
   await batch.commit();
+
+  try {
+    const q = query(collection(db, COLLECTIONS.TH_TRANSPORTERS), where("name", "==", transName));
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      await deleteDoc(d.ref);
+    }
+  } catch (err) {
+    console.warn('[Firestore] Error query deleting transporter:', err);
+  }
 };
 
 export const saveThermocolProductsToFirestore = async (products: ThermocolProduct[]): Promise<void> => {
-  // Deduplicate before saving
+  try {
+    const snap = await getDocs(collection(db, COLLECTIONS.TH_PRODUCTS));
+    const deleteBatch = writeBatch(db);
+    snap.docs.forEach(d => deleteBatch.delete(d.ref));
+    if (snap.docs.length > 0) {
+      await deleteBatch.commit();
+    }
+  } catch (err) {
+    console.warn('[Firestore] Error purging products collection:', err);
+  }
+
   const map = new Map<string, ThermocolProduct>();
   products.forEach(p => {
     if (p.name && p.name.trim()) {
@@ -1668,14 +1739,24 @@ export const saveThermocolProductsToFirestore = async (products: ThermocolProduc
       const comp = prod.company || 'AIL';
       const safeId = `${comp}_${prod.name}`.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 80);
       const docRef = doc(db, COLLECTIONS.TH_PRODUCTS, safeId);
-      batch.set(docRef, { ...prod, id: safeId, updatedAt: new Date().toISOString() }, { merge: true });
+      batch.set(docRef, { ...prod, id: safeId, updatedAt: new Date().toISOString() });
     });
     await batch.commit();
   }
 };
 
 export const saveThermocolPartiesToFirestore = async (parties: ThermocolParty[]): Promise<void> => {
-  // Deduplicate before saving
+  try {
+    const snap = await getDocs(collection(db, COLLECTIONS.TH_PARTIES));
+    const deleteBatch = writeBatch(db);
+    snap.docs.forEach(d => deleteBatch.delete(d.ref));
+    if (snap.docs.length > 0) {
+      await deleteBatch.commit();
+    }
+  } catch (err) {
+    console.warn('[Firestore] Error purging parties collection:', err);
+  }
+
   const map = new Map<string, ThermocolParty>();
   parties.forEach(p => {
     if (p.name && p.name.trim()) {
@@ -1693,14 +1774,24 @@ export const saveThermocolPartiesToFirestore = async (parties: ThermocolParty[])
       const comp = party.company || 'AIL';
       const safeId = `${comp}_${party.name}`.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 80);
       const docRef = doc(db, COLLECTIONS.TH_PARTIES, safeId);
-      batch.set(docRef, { ...party, updatedAt: new Date().toISOString() }, { merge: true });
+      batch.set(docRef, { ...party, updatedAt: new Date().toISOString() });
     });
     await batch.commit();
   }
 };
 
 export const saveThermocolTransportersToFirestore = async (transporters: ThermocolTransporter[]): Promise<void> => {
-  // Deduplicate before saving
+  try {
+    const snap = await getDocs(collection(db, COLLECTIONS.TH_TRANSPORTERS));
+    const deleteBatch = writeBatch(db);
+    snap.docs.forEach(d => deleteBatch.delete(d.ref));
+    if (snap.docs.length > 0) {
+      await deleteBatch.commit();
+    }
+  } catch (err) {
+    console.warn('[Firestore] Error purging transporters collection:', err);
+  }
+
   const map = new Map<string, ThermocolTransporter>();
   transporters.forEach(t => {
     if (t.name && t.name.trim()) {
@@ -1718,14 +1809,24 @@ export const saveThermocolTransportersToFirestore = async (transporters: Thermoc
       const comp = trans.company || 'AIL';
       const safeId = `${comp}_${trans.name}`.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 80);
       const docRef = doc(db, COLLECTIONS.TH_TRANSPORTERS, safeId);
-      batch.set(docRef, { ...trans, updatedAt: new Date().toISOString() }, { merge: true });
+      batch.set(docRef, { ...trans, updatedAt: new Date().toISOString() });
     });
     await batch.commit();
   }
 };
 
 export const saveThermocolDemandsToFirestore = async (demands: ClientDemand[]): Promise<void> => {
-  // Deduplicate before saving
+  try {
+    const snap = await getDocs(collection(db, COLLECTIONS.TH_DEMANDS));
+    const deleteBatch = writeBatch(db);
+    snap.docs.forEach(d => deleteBatch.delete(d.ref));
+    if (snap.docs.length > 0) {
+      await deleteBatch.commit();
+    }
+  } catch (err) {
+    console.warn('[Firestore] Error purging demands collection:', err);
+  }
+
   const map = new Map<string, ClientDemand>();
   demands.forEach(d => {
     if (d.partyName && d.productName) {
@@ -1743,7 +1844,7 @@ export const saveThermocolDemandsToFirestore = async (demands: ClientDemand[]): 
       const comp = d.company || 'AIL';
       const safeId = `${comp}_${d.partyName}_${d.productName}`.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 80);
       const docRef = doc(db, COLLECTIONS.TH_DEMANDS, safeId);
-      batch.set(docRef, { ...d, id: safeId, updatedAt: new Date().toISOString() }, { merge: true });
+      batch.set(docRef, { ...d, id: safeId, updatedAt: new Date().toISOString() });
     });
     await batch.commit();
   }

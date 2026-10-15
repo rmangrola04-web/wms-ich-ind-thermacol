@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Component, ReactNode } from 'react';
 import { 
   ArrowUpRight, 
   ClipboardList, 
@@ -238,44 +238,44 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
 
     // 1. Primary Full-Collection Listener for ich_operations
     const unsubAllOps = subscribeToAllIchOperations((opsData) => {
-      if (opsData.inwards && opsData.inwards.length > 0) {
+      if (opsData.inwards) {
         setInwards(opsData.inwards.map(i => ({ ...i, company: normalizeCompany(i.company) })));
       }
-      if (opsData.invoices && opsData.invoices.length > 0) {
+      if (opsData.invoices) {
         setInvoices(opsData.invoices.map(inv => ({
           ...inv,
           senderName: (!inv.senderName || inv.senderName.includes('ICH Indore') || inv.senderName.includes('Posh Enterprises')) ? DEFAULT_SENDER.name : inv.senderName
         })));
       }
-      if (opsData.audits && opsData.audits.length > 0) {
+      if (opsData.audits) {
         setInvoiceAudits(opsData.audits);
       }
-      if (opsData.products && opsData.products.length > 0) {
+      if (opsData.products) {
         setProducts(opsData.products);
       }
-      if (opsData.parties && opsData.parties.length > 0) {
+      if (opsData.parties) {
         setParties(opsData.parties.map(p => {
           const sanitized = sanitizePartyRecord(p, normalizeCompany(p.company));
           return { ...sanitized, company: normalizeCompany(p.company || sanitized.company) };
         }));
       }
-      if (opsData.transporters && opsData.transporters.length > 0) {
+      if (opsData.transporters) {
         setTransporters(opsData.transporters);
       }
-      if (opsData.demands && opsData.demands.length > 0) {
+      if (opsData.demands) {
         setClientDemands(opsData.demands);
       }
     });
 
     // 2. Specific Sub-Collection Real-time Sync Listeners
     const unsubInwards = subscribeToThermocolInwards((data) => {
-      if (data && data.length > 0) {
+      if (data) {
         setInwards(data.map(i => ({ ...i, company: normalizeCompany(i.company) })));
       }
     });
 
     const unsubInvoices = subscribeToThermocolInvoices((data) => {
-      if (data && data.length > 0) {
+      if (data) {
         setInvoices(data.map(inv => ({
           ...inv,
           senderName: (!inv.senderName || inv.senderName.includes('ICH Indore') || inv.senderName.includes('Posh Enterprises')) ? DEFAULT_SENDER.name : inv.senderName
@@ -284,13 +284,13 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
     });
 
     const unsubProds = subscribeToThermocolProducts((data) => {
-      if (data && data.length > 0) {
+      if (data) {
         setProducts(data.map(p => ({ ...p, company: normalizeCompany(p.company) })));
       }
     });
 
     const unsubParties = subscribeToThermocolParties((data) => {
-      if (data && data.length > 0) {
+      if (data) {
         setParties(data.map(p => {
           const sanitized = sanitizePartyRecord(p, normalizeCompany(p.company));
           return { ...sanitized, company: normalizeCompany(p.company || sanitized.company) };
@@ -299,19 +299,19 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
     });
 
     const unsubTrans = subscribeToThermocolTransporters((data) => {
-      if (data && data.length > 0) {
+      if (data) {
         setTransporters(data.map(t => ({ ...t, company: normalizeCompany(t.company) })));
       }
     });
 
     const unsubDemands = subscribeToThermocolDemands((data) => {
-      if (data && data.length > 0) {
+      if (data) {
         setClientDemands(data.map(d => ({ ...d, company: normalizeCompany(d.company) })));
       }
     });
 
     const unsubAudits = subscribeToThermocolAudits((data) => {
-      if (data && data.length > 0) {
+      if (data) {
         setInvoiceAudits(data);
       }
     });
@@ -571,7 +571,7 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
 
   // DIRECT FIRESTORE INVOICES QUERY ON TAB CHANGE (Print Preview & Reports)
   useEffect(() => {
-    if (activeTab === 'previewPrintTab' || activeTab === 'reportTab') {
+    if ((activeTab === 'previewPrintTab' || activeTab === 'reportTab') && invoices.length === 0) {
       console.log(`[Firestore Tab Sync] Direct query for invoices in ${activeTab}...`);
       fetchInvoicesFromIchOperations().then(loadedInvoices => {
         if (loadedInvoices && loadedInvoices.length > 0) {
@@ -592,11 +592,74 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
         console.warn('[Firestore Tab Sync] Error loading invoices directly:', err);
       });
     }
-  }, [activeTab]);
+  }, [activeTab, invoices.length]);
+
+  // Error Boundary for Edit Invoices tab to prevent white screen crashes
+  class EditInvoiceErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+    state = { hasError: false, error: null };
+    static getDerivedStateFromError(error: Error) {
+      return { hasError: true, error };
+    }
+    componentDidCatch(error: Error, errorInfo: any) {
+      console.error('Edit Invoices component caught error:', error, errorInfo);
+    }
+    render() {
+      if (this.state.hasError) {
+        return (
+          <div className="bg-white p-6 rounded-2xl border border-red-200 shadow-md space-y-4 text-center my-4">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <h3 className="font-extrabold text-slate-800 text-base">Unable to Load Invoice Editor</h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto font-mono">
+              {this.state.error?.message || 'An unexpected rendering error occurred while loading invoice details.'}
+            </p>
+            <button
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-sm"
+            >
+              Retry / Reset Editor
+            </button>
+          </div>
+        );
+      }
+      return this.props.children;
+    }
+  }
 
   // ----------------------------------------------------
   // Module D: Invoice Correction & Deletion with Stock Refund
   // ----------------------------------------------------
+  const sanitizeInvoiceForEdit = (inv: ThermocolInvoice): ThermocolInvoice => {
+    try {
+      const items = Array.isArray(inv.items) ? inv.items.map(it => ({
+        ...it,
+        qty: Number(it.qty || 0),
+        rate: Number(it.rate || 0),
+        taxableValue: Number(it.taxableValue || (Number(it.qty || 0) * Number(it.rate || 0))),
+        gstValue: Number(it.gstValue || 0),
+        totalValue: Number(it.totalValue || (Number(it.taxableValue || 0) + Number(it.gstValue || 0))),
+        packSize: it.packSize || '-',
+        productName: it.productName || 'Unknown Product'
+      })) : [];
+
+      return {
+        ...inv,
+        items,
+        partyName: inv.partyName || '',
+        transName: inv.transName || '',
+        vehicleNo: inv.vehicleNo || '',
+        totalQty: Number(inv.totalQty || items.reduce((s, i) => s + i.qty, 0)),
+        totalTaxable: String(inv.totalTaxable || items.reduce((s, i) => s + i.taxableValue, 0).toFixed(2)),
+        totalGst: String(inv.totalGst || items.reduce((s, i) => s + i.gstValue, 0).toFixed(2)),
+        grandTotal: String(inv.grandTotal || items.reduce((s, i) => s + i.totalValue, 0).toFixed(2)),
+      };
+    } catch (e) {
+      console.error('Error sanitizing invoice for edit:', e);
+      return inv;
+    }
+  };
+
   const [editInvNo, setEditInvNo] = useState<string>(() => {
     return invoices.length > 0 ? invoices[0].invNo : '';
   });
@@ -604,13 +667,18 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
   const [editMsg, setEditMsg] = useState<{ text: string; isError: boolean } | null>(null);
 
   useEffect(() => {
-    const inv = invoices.find(i => i.invNo === editInvNo);
-    if (inv) {
-      setEditForm(JSON.parse(JSON.stringify(inv)));
-    } else if (invoices.length > 0) {
-      setEditInvNo(invoices[0].invNo);
-      setEditForm(JSON.parse(JSON.stringify(invoices[0])));
-    } else {
+    try {
+      const inv = invoices.find(i => i.invNo === editInvNo);
+      if (inv) {
+        setEditForm(sanitizeInvoiceForEdit(JSON.parse(JSON.stringify(inv))));
+      } else if (invoices.length > 0) {
+        setEditInvNo(invoices[0].invNo);
+        setEditForm(sanitizeInvoiceForEdit(JSON.parse(JSON.stringify(invoices[0]))));
+      } else {
+        setEditForm(null);
+      }
+    } catch (err) {
+      console.error('Error setting edit form:', err);
       setEditForm(null);
     }
   }, [editInvNo, invoices]);
@@ -1267,7 +1335,7 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
     setInwardGridRows(prev => prev.filter(r => r.id !== id));
   };
 
-  // Real-time automatic computation: Taxable = Qty * Rate, Gst 18% = Taxable * 0.18, Invoice Value = Taxable + Gst 18%
+  // Real-time automatic computation: Taxable = Qty * Rate, Gst 18% = Taxable * 0.18, Invoice Value = Taxable + Gst 18%, Cases = Qty / Pack Size Multiple
   const updateInwardRow = (id: string, updates: Partial<InwardGridRow>) => {
     setInwardGridRows(prev => prev.map(r => {
       if (r.id !== id) return r;
@@ -1280,13 +1348,18 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
 
       let hsn = merged.hsnCode;
       let pack = merged.pack;
-      if (updates.productDescription) {
-        const matchedProd = activeProducts.find(p => p.name === updates.productDescription) || products.find(p => p.name === updates.productDescription && normalizeCompany(p.company) === selectedCompany);
+      let multiple = 1;
+      const pDesc = merged.productDescription;
+      if (pDesc) {
+        const matchedProd = activeProducts.find(p => p.name === pDesc) || products.find(p => p.name === pDesc && normalizeCompany(p.company) === selectedCompany);
         if (matchedProd) {
           hsn = matchedProd.hsnCode || '39239090';
           pack = matchedProd.packSize || pack;
+          multiple = matchedProd.packSizeMultiple || 1;
         }
       }
+      const casesCountNum = multiple > 0 ? (q % multiple === 0 ? q / multiple : Number((q / multiple).toFixed(1))) : 0;
+      const caseCountStr = q > 0 ? `${casesCountNum} Cases` : '';
 
       return {
         ...merged,
@@ -1297,7 +1370,8 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
         productName: merged.productDescription,
         taxable,
         gst18,
-        invoiceValue
+        invoiceValue,
+        caseCount: caseCountStr
       };
     }));
   };
@@ -2287,236 +2361,238 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
             MODULE D: INVOICE CORRECTION, EDITING & DELETION
             ======================================================== */}
         {activeTab === 'editInvoiceTab' && (
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-700">Select Invoice to Correct or Delete:</span>
-                <select
-                  value={editInvNo}
-                  onChange={(e) => setEditInvNo(e.target.value)}
-                  className="bg-slate-50 border border-slate-300 rounded px-3 py-1.5 text-xs font-mono font-bold text-blue-700 outline-none cursor-pointer"
-                >
-                  {invoices.length === 0 ? (
-                    <option value="">-- No Invoices in System --</option>
-                  ) : (
-                    invoices.map((inv) => (
-                      <option key={inv.invNo} value={inv.invNo}>
-                        {inv.invNo} - {inv.partyName}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400 font-mono">Strict FY 26-27 Series Continuity Active</span>
-                {editForm && (
-                  <button
-                    onClick={() => handleDeleteInvoice(editForm.invNo)}
-                    className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-xs"
-                    title="Delete entire invoice and restore inventory levels"
+          <EditInvoiceErrorBoundary>
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-700">Select Invoice to Correct or Delete:</span>
+                  <select
+                    value={editInvNo}
+                    onChange={(e) => setEditInvNo(e.target.value)}
+                    className="bg-slate-50 border border-slate-300 rounded px-3 py-1.5 text-xs font-mono font-bold text-blue-700 outline-none cursor-pointer"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete Entire Invoice</span>
-                  </button>
-                )}
+                    {invoices.length === 0 ? (
+                      <option value="">-- No Invoices in System --</option>
+                    ) : (
+                      invoices.map((inv) => (
+                        <option key={inv.invNo} value={inv.invNo}>
+                          {inv.invNo} - {inv.partyName}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400 font-mono">Strict FY 26-27 Series Continuity Active</span>
+                  {editForm && (
+                    <button
+                      onClick={() => handleDeleteInvoice(editForm.invNo)}
+                      className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-xs"
+                      title="Delete entire invoice and restore inventory levels"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Entire Invoice</span>
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
 
-            {editForm ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Client Name:</label>
-                    <input
-                      type="text"
-                      value={editForm.partyName}
-                      onChange={(e) => setEditForm({ ...editForm, partyName: e.target.value })}
-                      className="w-full bg-white border border-slate-300 rounded px-2 py-1 font-bold text-slate-900"
-                    />
+              {editForm ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Client Name:</label>
+                      <input
+                        type="text"
+                        value={editForm.partyName}
+                        onChange={(e) => setEditForm({ ...editForm, partyName: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded px-2 py-1 font-bold text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Transporter:</label>
+                      <input
+                        type="text"
+                        value={editForm.transName}
+                        onChange={(e) => setEditForm({ ...editForm, transName: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Vehicle Number:</label>
+                      <input
+                        type="text"
+                        value={editForm.vehicleNo}
+                        onChange={(e) => setEditForm({ ...editForm, vehicleNo: e.target.value })}
+                        className="w-full bg-white border border-slate-300 rounded px-2 py-1 font-mono uppercase font-bold text-slate-900"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Transporter:</label>
-                    <input
-                      type="text"
-                      value={editForm.transName}
-                      onChange={(e) => setEditForm({ ...editForm, transName: e.target.value })}
-                      className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-slate-900"
-                    />
+
+                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                    <table className="w-full text-xs text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
+                          <th className="py-2 px-3">Product Description</th>
+                          <th className="py-2 px-3">Pack Size</th>
+                          <th className="py-2 px-3 text-right">Quantity</th>
+                          <th className="py-2 px-3 text-right">Rate (₹)</th>
+                          <th className="py-2 px-3 text-right">Taxable (₹)</th>
+                          <th className="py-2 px-3 text-right">
+                            {editForm.isInterState ? 'IGST (18%)' : 'Tax (0% Local)'}
+                          </th>
+                          <th className="py-2 px-3 text-right font-bold">Total (₹)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {editForm.items.map(it => (
+                          <tr key={it.id}>
+                            <td className="py-2 px-3 font-semibold text-slate-900">
+                              {it.productName}
+                            </td>
+                            <td className="py-2 px-3 text-slate-600">{it.packSize}</td>
+                            <td className="py-2 px-3 text-right">
+                              <input
+                                type="number"
+                                min="1"
+                                value={it.qty}
+                                onChange={(e) => updateEditItem(it.id, 'qty', e.target.value)}
+                                className="w-20 text-right border border-slate-300 rounded px-2 py-1 font-mono font-bold text-slate-900"
+                              />
+                            </td>
+                            <td className="py-2 px-3 text-right">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={it.rate}
+                                onChange={(e) => updateEditItem(it.id, 'rate', e.target.value)}
+                                className="w-20 text-right border border-slate-300 rounded px-2 py-1 font-mono text-slate-900"
+                              />
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono">₹{it.taxableValue.toFixed(2)}</td>
+                            <td className="py-2 px-3 text-right font-mono">
+                              {editForm.isInterState ? `₹${it.gstValue.toFixed(2)} (18%)` : '₹0.00 (0%)'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono font-bold text-blue-700">₹{it.totalValue.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-50 font-bold border-t border-slate-200">
+                          <td colSpan={2} className="py-2 px-3">Recalculated Grand Total</td>
+                          <td className="py-2 px-3 text-right font-mono text-blue-700">{editForm.totalQty} Pcs</td>
+                          <td></td>
+                          <td className="py-2 px-3 text-right font-mono">₹{editForm.totalTaxable}</td>
+                          <td className="py-2 px-3 text-right font-mono">
+                            {editForm.isInterState ? `₹${editForm.totalGst}` : '₹0.00 (Exempt)'}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono text-emerald-700 font-extrabold">₹{editForm.grandTotal}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Vehicle Number:</label>
-                    <input
-                      type="text"
-                      value={editForm.vehicleNo}
-                      onChange={(e) => setEditForm({ ...editForm, vehicleNo: e.target.value })}
-                      className="w-full bg-white border border-slate-300 rounded px-2 py-1 font-mono uppercase font-bold text-slate-900"
-                    />
+
+                  {editMsg && (
+                    <div className={`p-3 rounded-lg text-xs font-semibold flex items-center gap-2 ${
+                      editMsg.isError ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    }`}>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>{editMsg.text}</span>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleSaveInvoiceCorrection}
+                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-sm"
+                  >
+                    Save & Update Invoice Corrections
+                  </button>
+                </div>
+              ) : (
+                <div className="p-8 text-center text-xs text-slate-400 italic">
+                  No invoices found in the system to edit.
+                </div>
+              )}
+
+              {/* Audit History Log Section */}
+              <div className="mt-8 pt-6 border-t border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-purple-600" />
+                    <span>Invoice Cancellation & Stock Refund Audit Trail</span>
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono text-slate-500">Total Log Entries: {invoiceAudits.length}</span>
+                    {invoiceAudits.some(a => a.action === 'CANCEL' || a.deletedAt) && (
+                      <button
+                        type="button"
+                        onClick={handlePurgeCancelledAudits}
+                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 rounded text-xs font-bold transition flex items-center gap-1 border border-rose-200 cursor-pointer shadow-2xs"
+                        title="Permanently purge all cancelled invoice records from Firestore"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Clear Cancelled History</span>
+                      </button>
+                    )}
                   </div>
                 </div>
+                <p className="text-xs text-slate-500">
+                  Transparent cancellation and refund log showing deleted invoice numbers, timestamps, refunded quantities, and inventory stock restorations.
+                </p>
 
                 <div className="overflow-x-auto rounded-lg border border-slate-200">
                   <table className="w-full text-xs text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
-                        <th className="py-2 px-3">Product Description</th>
-                        <th className="py-2 px-3">Pack Size</th>
-                        <th className="py-2 px-3 text-right">Quantity</th>
-                        <th className="py-2 px-3 text-right">Rate (₹)</th>
-                        <th className="py-2 px-3 text-right">Taxable (₹)</th>
-                        <th className="py-2 px-3 text-right">
-                          {editForm.isInterState ? 'IGST (18%)' : 'Tax (0% Local)'}
-                        </th>
-                        <th className="py-2 px-3 text-right font-bold">Total (₹)</th>
+                        <th className="py-2.5 px-3">Deleted At (UTC)</th>
+                        <th className="py-2.5 px-3">Invoice Number</th>
+                        <th className="py-2.5 px-3">Client Name</th>
+                        <th className="py-2.5 px-3">Product Name</th>
+                        <th className="py-2.5 px-3 text-right">Refunded Qty</th>
+                        <th className="py-2.5 px-3 text-center">Status</th>
+                        <th className="py-2.5 px-3 text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {editForm.items.map(it => (
-                        <tr key={it.id}>
-                          <td className="py-2 px-3 font-semibold text-slate-900">
-                            {it.productName}
+                      {invoiceAudits.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-4 text-center text-slate-400 italic">
+                            No invoice cancellations or stock refunds recorded yet.
                           </td>
-                          <td className="py-2 px-3 text-slate-600">{it.packSize}</td>
-                          <td className="py-2 px-3 text-right">
-                            <input
-                              type="number"
-                              min="1"
-                              value={it.qty}
-                              onChange={(e) => updateEditItem(it.id, 'qty', e.target.value)}
-                              className="w-20 text-right border border-slate-300 rounded px-2 py-1 font-mono font-bold text-slate-900"
-                            />
-                          </td>
-                          <td className="py-2 px-3 text-right">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={it.rate}
-                              onChange={(e) => updateEditItem(it.id, 'rate', e.target.value)}
-                              className="w-20 text-right border border-slate-300 rounded px-2 py-1 font-mono text-slate-900"
-                            />
-                          </td>
-                          <td className="py-2 px-3 text-right font-mono">₹{it.taxableValue.toFixed(2)}</td>
-                          <td className="py-2 px-3 text-right font-mono">
-                            {editForm.isInterState ? `₹${it.gstValue.toFixed(2)} (18%)` : '₹0.00 (0%)'}
-                          </td>
-                          <td className="py-2 px-3 text-right font-mono font-bold text-blue-700">₹{it.totalValue.toFixed(2)}</td>
                         </tr>
-                      ))}
+                      ) : (
+                        invoiceAudits.map(aud => (
+                          <tr key={aud.id} className="hover:bg-slate-50">
+                            <td className="py-2 px-3 font-mono text-slate-600">{aud.deletedAt}</td>
+                            <td className="py-2 px-3 font-mono font-bold text-red-600">{aud.invNo}</td>
+                            <td className="py-2 px-3 font-semibold text-slate-900">{aud.partyName}</td>
+                            <td className="py-2 px-3 text-slate-800">{aud.productName}</td>
+                            <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700">+{aud.refundedQty} Pcs</td>
+                            <td className="py-2 px-3 text-center">
+                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold">
+                                Stock Refunded
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAuditLog(aud.id)}
+                                className="p-1 text-rose-600 hover:bg-rose-100 rounded transition cursor-pointer"
+                                title="Permanently delete this cancel record from Firestore"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
-                    <tfoot>
-                      <tr className="bg-slate-50 font-bold border-t border-slate-200">
-                        <td colSpan={2} className="py-2 px-3">Recalculated Grand Total</td>
-                        <td className="py-2 px-3 text-right font-mono text-blue-700">{editForm.totalQty} Pcs</td>
-                        <td></td>
-                        <td className="py-2 px-3 text-right font-mono">₹{editForm.totalTaxable}</td>
-                        <td className="py-2 px-3 text-right font-mono">
-                          {editForm.isInterState ? `₹${editForm.totalGst}` : '₹0.00 (Exempt)'}
-                        </td>
-                        <td className="py-2 px-3 text-right font-mono text-emerald-700 font-extrabold">₹{editForm.grandTotal}</td>
-                      </tr>
-                    </tfoot>
                   </table>
                 </div>
-
-                {editMsg && (
-                  <div className={`p-3 rounded-lg text-xs font-semibold flex items-center gap-2 ${
-                    editMsg.isError ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                  }`}>
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>{editMsg.text}</span>
-                  </div>
-                )}
-
-                <button
-                  onClick={handleSaveInvoiceCorrection}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-sm"
-                >
-                  Save & Update Invoice Corrections
-                </button>
-              </div>
-            ) : (
-              <div className="p-8 text-center text-xs text-slate-400 italic">
-                No invoices found in the system to edit.
-              </div>
-            )}
-
-            {/* Audit History Log Section */}
-            <div className="mt-8 pt-6 border-t border-slate-200 space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-1.5">
-                  <FileText className="w-4 h-4 text-purple-600" />
-                  <span>Invoice Cancellation & Stock Refund Audit Trail</span>
-                </h4>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-mono text-slate-500">Total Log Entries: {invoiceAudits.length}</span>
-                  {invoiceAudits.some(a => a.action === 'CANCEL' || a.deletedAt) && (
-                    <button
-                      type="button"
-                      onClick={handlePurgeCancelledAudits}
-                      className="px-2.5 py-1 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 rounded text-xs font-bold transition flex items-center gap-1 border border-rose-200 cursor-pointer shadow-2xs"
-                      title="Permanently purge all cancelled invoice records from Firestore"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      <span>Clear Cancelled History</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-              <p className="text-xs text-slate-500">
-                Transparent cancellation and refund log showing deleted invoice numbers, timestamps, refunded quantities, and inventory stock restorations.
-              </p>
-
-              <div className="overflow-x-auto rounded-lg border border-slate-200">
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
-                      <th className="py-2.5 px-3">Deleted At (UTC)</th>
-                      <th className="py-2.5 px-3">Invoice Number</th>
-                      <th className="py-2.5 px-3">Client Name</th>
-                      <th className="py-2.5 px-3">Product Name</th>
-                      <th className="py-2.5 px-3 text-right">Refunded Qty</th>
-                      <th className="py-2.5 px-3 text-center">Status</th>
-                      <th className="py-2.5 px-3 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {invoiceAudits.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="py-4 text-center text-slate-400 italic">
-                          No invoice cancellations or stock refunds recorded yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      invoiceAudits.map(aud => (
-                        <tr key={aud.id} className="hover:bg-slate-50">
-                          <td className="py-2 px-3 font-mono text-slate-600">{aud.deletedAt}</td>
-                          <td className="py-2 px-3 font-mono font-bold text-red-600">{aud.invNo}</td>
-                          <td className="py-2 px-3 font-semibold text-slate-900">{aud.partyName}</td>
-                          <td className="py-2 px-3 text-slate-800">{aud.productName}</td>
-                          <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700">+{aud.refundedQty} Pcs</td>
-                          <td className="py-2 px-3 text-center">
-                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold">
-                              Stock Refunded
-                            </span>
-                          </td>
-                          <td className="py-2 px-3 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteAuditLog(aud.id)}
-                              className="p-1 text-rose-600 hover:bg-rose-100 rounded transition cursor-pointer"
-                              title="Permanently delete this cancel record from Firestore"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
               </div>
             </div>
-          </div>
+          </EditInvoiceErrorBoundary>
         )}
 
         {/* ========================================================
@@ -3102,7 +3178,12 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
                               <td className={`py-2.5 px-3 text-right font-mono font-extrabold text-sm ${
                                 currentStock > 0 ? 'text-emerald-700' : 'text-red-600'
                               }`}>
-                                {currentStock} Pcs
+                                <div>{currentStock} Pcs</div>
+                                {currentStock > 0 && (
+                                  <div className="text-[11px] text-indigo-700 font-bold mt-0.5">
+                                    ({prod.packSizeMultiple > 0 ? (currentStock % prod.packSizeMultiple === 0 ? currentStock / prod.packSizeMultiple : Number((currentStock / prod.packSizeMultiple).toFixed(1))) : currentStock} Cases)
+                                  </div>
+                                )}
                               </td>
                               <td className="py-2.5 px-3 text-right font-mono text-slate-700">{prod.weight} kg</td>
                               <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
@@ -3616,14 +3697,15 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
                             />
                           </td>
 
-                          {/* 13. Case */}
+                          {/* 13. Case (Auto-calculated) */}
                           <td className="p-1.5">
                             <input
                               type="text"
+                              readOnly
                               value={row.caseCount}
-                              onChange={(e) => updateInwardRow(row.id, { caseCount: e.target.value })}
-                              placeholder="10 Cases"
-                              className="border border-slate-300 rounded px-2 py-1 text-xs w-20 bg-white font-mono"
+                              placeholder="Auto Cases"
+                              className="border border-slate-200 rounded px-2 py-1 text-xs w-24 bg-slate-100 text-slate-700 font-mono font-bold cursor-not-allowed select-none"
+                              title="Auto-calculated: Qty / Pack Size Multiple"
                             />
                           </td>
 
@@ -4521,6 +4603,10 @@ export const PackingMaterialView: React.FC<PackingMaterialViewProps> = ({ curren
                 setInvoiceSeqAIL={setInvoiceSeqAIL}
                 invoiceSeqHPL={invoiceSeqHPL}
                 setInvoiceSeqHPL={setInvoiceSeqHPL}
+                challanSeqAIL={challanSeqAIL}
+                setChallanSeqAIL={setChallanSeqAIL}
+                challanSeqHPL={challanSeqHPL}
+                setChallanSeqHPL={setChallanSeqHPL}
                 invoiceAudits={invoiceAudits}
                 setInvoiceAudits={setInvoiceAudits}
                 persistStorage={persistStorage}

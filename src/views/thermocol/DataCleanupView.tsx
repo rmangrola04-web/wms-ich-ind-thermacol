@@ -27,6 +27,10 @@ interface DataCleanupViewProps {
   setInvoiceSeqAIL?: (seq: number) => void;
   invoiceSeqHPL?: number;
   setInvoiceSeqHPL?: (seq: number) => void;
+  challanSeqAIL?: number;
+  setChallanSeqAIL?: (seq: number) => void;
+  challanSeqHPL?: number;
+  setChallanSeqHPL?: (seq: number) => void;
   invoiceSeq?: number;
   selectedCompany?: CompanyType;
   invoiceAudits: InvoiceAuditLog[];
@@ -61,6 +65,10 @@ export const DataCleanupView: React.FC<DataCleanupViewProps> = ({
   setInvoiceSeqAIL,
   invoiceSeqHPL = 1,
   setInvoiceSeqHPL,
+  challanSeqAIL = 1,
+  setChallanSeqAIL,
+  challanSeqHPL = 1,
+  setChallanSeqHPL,
   invoiceAudits,
   setInvoiceAudits,
   persistStorage,
@@ -74,6 +82,9 @@ export const DataCleanupView: React.FC<DataCleanupViewProps> = ({
   const [selectedInvoiceNos, setSelectedInvoiceNos] = useState<string[]>([]);
   const [resetDivision, setResetDivision] = useState<'AIL' | 'AHPL'>('AIL');
   const [customSeqInput, setCustomSeqInput] = useState<string>(String(invoiceSeqAIL));
+
+  const [resetChallanDivision, setResetChallanDivision] = useState<'AIL' | 'AHPL'>('AIL');
+  const [customChallanSeqInput, setCustomChallanSeqInput] = useState<string>(String(challanSeqAIL));
   
   const [statusMsg, setStatusMsg] = useState<{ text: string; isError: boolean } | null>(null);
 
@@ -84,6 +95,14 @@ export const DataCleanupView: React.FC<DataCleanupViewProps> = ({
       setCustomSeqInput(String(invoiceSeqHPL));
     }
   }, [resetDivision, invoiceSeqAIL, invoiceSeqHPL]);
+
+  React.useEffect(() => {
+    if (resetChallanDivision === 'AIL') {
+      setCustomChallanSeqInput(String(challanSeqAIL));
+    } else {
+      setCustomChallanSeqInput(String(challanSeqHPL));
+    }
+  }, [resetChallanDivision, challanSeqAIL, challanSeqHPL]);
 
   const handleSetCustomInvoiceSequence = (overrideVal?: number) => {
     const parsed = overrideVal !== undefined ? overrideVal : parseInt(customSeqInput, 10);
@@ -97,6 +116,18 @@ export const DataCleanupView: React.FC<DataCleanupViewProps> = ({
       persistStorage(products, parties, transporters, clientDemands, inwards, invoices, invoiceSeqAIL, targetSeq, invoiceAudits);
     }
     setStatusMsg({ text: `Invoice sequence counter for ${resetDivision} (AIL / AHPL) has been successfully set to ${targetSeq}! Subsequent invoices will continue from ${targetSeq}.`, isError: false });
+  };
+
+  const handleSetCustomChallanSequence = (overrideVal?: number) => {
+    const parsed = overrideVal !== undefined ? overrideVal : parseInt(customChallanSeqInput, 10);
+    const targetSeq = isNaN(parsed) || parsed < 1 ? 1 : parsed;
+
+    if (resetChallanDivision === 'AIL') {
+      if (setChallanSeqAIL) setChallanSeqAIL(targetSeq);
+    } else {
+      if (setChallanSeqHPL) setChallanSeqHPL(targetSeq);
+    }
+    setStatusMsg({ text: `Delivery Challan sequence counter for ${resetChallanDivision} (AIL / AHPL) has been successfully set to ${targetSeq}! Subsequent challans will continue from ${targetSeq}.`, isError: false });
   };
 
   const handleClearCancelledInvoiceHistory = async () => {
@@ -386,6 +417,62 @@ export const DataCleanupView: React.FC<DataCleanupViewProps> = ({
               }}
               className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg border border-slate-300 transition cursor-pointer flex items-center justify-center gap-1 shrink-0"
               title="Quick reset sequence back to 1"
+            >
+              <span>Reset to 1</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Custom Delivery Challan Sequence Reset Card */}
+        <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm space-y-3">
+          <h4 className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-1.5">
+            <RotateCcw className="w-4 h-4 text-emerald-600" />
+            <span>Custom Delivery Challan Sequence Reset</span>
+          </h4>
+          <p className="text-xs text-slate-500">
+            Select division and enter your desired custom starting Delivery Challan sequence number (e.g. 1, 100, 500).
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-700">Select Division / Company:</label>
+              <select
+                value={resetChallanDivision}
+                onChange={(e) => setResetChallanDivision(e.target.value as 'AIL' | 'AHPL')}
+                className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white font-medium focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+              >
+                <option value="AIL">AIL (Abbott India Limited) - Current Challan: {challanSeqAIL}</option>
+                <option value="AHPL">AHPL (Abbott Healthcare Private) - Current Challan: {challanSeqHPL}</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-700">Custom Starting Challan Number:</label>
+              <input
+                type="number"
+                min={1}
+                value={customChallanSeqInput}
+                onChange={(e) => setCustomChallanSeqInput(e.target.value)}
+                placeholder="e.g. 1, 100, 500"
+                className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white font-mono font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => handleSetCustomChallanSequence()}
+              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Set Custom Challan Sequence</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCustomChallanSeqInput('1');
+                handleSetCustomChallanSequence(1);
+              }}
+              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg border border-slate-300 transition cursor-pointer flex items-center justify-center gap-1 shrink-0"
+              title="Quick reset challan sequence back to 1"
             >
               <span>Reset to 1</span>
             </button>

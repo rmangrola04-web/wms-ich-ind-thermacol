@@ -34,6 +34,8 @@ import {
   DEFAULT_HPL_SENDER
 } from './utils';
 
+import { SearchableSelect } from '../../components/SearchableSelect';
+
 // Safe Default Fallbacks to prevent any undefined crashes
 export const SAFE_DEFAULT_PRODUCT: ThermocolProduct = {
   id: '',
@@ -772,24 +774,28 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
     const partyObj = sanitizePartyRecord(rawParty, targetCompany);
     const transObj = companyTransporters.find(t => t.name === transName);
 
-    const invoiceItems: InvoiceLineItem[] = validLines.map(l => ({
-      id: l.id,
-      productId: l.productId,
-      productName: l.productName,
-      hsnCode: l.hsnCode,
-      packSize: l.packSize,
-      packSizeMultiple: l.packSizeMultiple,
-      cases: l.cases,
-      qty: l.qty,
-      batch: l.batch?.trim() || undefined,
-      exp: l.exp?.trim() || undefined,
-      rate: l.rate,
-      weight: l.weight,
-      cft: l.cft,
-      taxableValue: l.taxableValue,
-      gstValue: l.gstValue,
-      totalValue: l.totalValue
-    }));
+    const invoiceItems: InvoiceLineItem[] = validLines.map(l => {
+      const prod = companyProducts.find(p => p.id === l.productId || p.name === l.productName);
+      const isCoolantProd = prod && (prod.name.toLowerCase().includes('coolant pack') || prod.name.toLowerCase().includes('coolant'));
+      return {
+        id: l.id,
+        productId: l.productId,
+        productName: l.productName,
+        hsnCode: l.hsnCode,
+        packSize: l.packSize,
+        packSizeMultiple: l.packSizeMultiple,
+        cases: l.cases,
+        qty: l.qty,
+        batch: isCoolantProd ? (l.batch?.trim() || 'N/A') : 'N/A',
+        exp: l.exp?.trim() || undefined,
+        rate: l.rate,
+        weight: l.weight,
+        cft: l.cft,
+        taxableValue: l.taxableValue,
+        gstValue: l.gstValue,
+        totalValue: l.totalValue
+      };
+    });
 
     // Origin / Consignor (Sender) Details dynamic per Active Company (AIL vs HPL)
     const compConfig = targetCompany === 'HPL' ? COMPANY_CONFIGS.HPL : COMPANY_CONFIGS.AIL;
@@ -1059,22 +1065,19 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
                   {selectedCity === 'ALL' ? 'All Cities' : selectedCity}
                 </span>
               </label>
-              <select
+              <SearchableSelect
+                options={[
+                  { label: `-- All Cities (${companyParties.length} Clients) --`, value: 'ALL' },
+                  ...availableCities.map(city => {
+                    const count = companyParties.filter(p => getPartyCity(p).toLowerCase() === city.toLowerCase()).length;
+                    return { label: `📍 ${city} (${count} ${count === 1 ? 'Client' : 'Clients'})`, value: city };
+                  })
+                ]}
                 value={selectedCity}
-                onChange={(e) => handleCityChange(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition cursor-pointer"
-              >
-                <option value="ALL">-- All Cities ({companyParties.length} Clients) --</option>
-                {availableCities.map((city, idx) => {
-                  const count = companyParties.filter(p => getPartyCity(p).toLowerCase() === city.toLowerCase()).length;
-                  return (
-                    <option key={idx} value={city}>
-                      📍 {city} ({count} {count === 1 ? 'Client' : 'Clients'})
-                    </option>
-                  );
-                })}
-              </select>
-              <span className="text-[10px] text-slate-400 block">Sourced dynamically from Customer Master</span>
+                onChange={(val) => handleCityChange(val || 'ALL')}
+                placeholder="-- All Cities --"
+              />
+              <span className="text-[10px] text-slate-400 block">Sourced dynamically from Customer Master (Type to search city)</span>
             </div>
 
             {/* Step 1.4: Client Selection (Sold To Party) - Restricted by City Filter */}
@@ -1088,30 +1091,20 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
                   {filteredParties.length} available
                 </span>
               </label>
-              <select
+              <SearchableSelect
+                options={filteredParties.map(p => ({
+                  label: `${p.name} ${p.city ? `(${p.city})` : ''}`,
+                  value: p.name,
+                  sublabel: p.address || p.gstin
+                }))}
                 value={selectedPartyName}
-                onChange={(e) => {
-                  setSelectedPartyName(e.target.value);
-                  setDemandAuth(null); // Invalidate override when switching client
+                onChange={(val) => {
+                  setSelectedPartyName(val);
+                  setDemandAuth(null);
                 }}
-                className={`w-full rounded-xl px-3.5 py-2.5 text-xs font-bold outline-none transition cursor-pointer ${
-                  !selectedPartyName 
-                    ? 'bg-red-50/20 border border-red-400 text-slate-900 focus:ring-2 focus:ring-red-500/20 focus:border-red-500' 
-                    : 'bg-white border border-slate-300 text-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
-                }`}
-              >
-                <option value="">-- Select Sold To Party (Client) * --</option>
-                {filteredParties.length === 0 ? (
-                  <option value="" disabled>-- No Clients Found in {selectedCity} --</option>
-                ) : (
-                  filteredParties.map((p, idx) => (
-                    <option key={idx} value={p.name}>
-                      {p.name} {p.city ? `(${p.city})` : ''}
-                    </option>
-                  ))
-                )}
-              </select>
-              <span className="text-[10px] text-slate-400 block">Filtered by selected city</span>
+                placeholder="-- Select Sold To Party (Client) * --"
+              />
+              <span className="text-[10px] text-slate-400 block">Filtered by selected city (Type any keyword to search)</span>
             </div>
           </div>
 
@@ -1357,11 +1350,20 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
                     <tr key={line.id || idx} className={calc?.isInvalidMultiple ? 'bg-red-50/40' : 'hover:bg-slate-50/70'}>
                       {/* Product Selector (Only stock > 0 items displayed) */}
                       <td className="py-2.5 px-3 min-w-[240px]">
-                        <select
+                        <SearchableSelect
+                          options={inStockProducts.map(p => {
+                            const s = getProductStock(p);
+                            const fifoPrice = getFifoRate(p);
+                            return {
+                              label: `${p.name} - ₹${fifoPrice.toFixed(2)} [FIFO] | Stock: ${s} Pcs`,
+                              value: p.id,
+                              sublabel: `Pack: ${p.packSize} | Multiple: x${p.packSizeMultiple || 1}`
+                            };
+                          })}
                           value={line.productId || ''}
-                          onChange={(e) => {
-                            const newId = e.target.value;
+                          onChange={(newId) => {
                             const newP = companyProducts.find(p => p.id === newId) || null;
+                            const isCoolantNew = newP && (newP.name.toLowerCase().includes('coolant pack') || newP.name.toLowerCase().includes('coolant'));
                             const newMultiple = newP?.packSizeMultiple || 1;
                             const currentCases = line.cases !== undefined && line.cases !== '' ? Number(line.cases) : '';
                             const computedQty = currentCases !== '' ? Number(currentCases) * newMultiple : '';
@@ -1369,27 +1371,13 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
                               ...l,
                               productId: newId,
                               cases: currentCases,
-                              qty: computedQty
+                              qty: computedQty,
+                              batch: isCoolantNew ? (l.batch === 'N/A' ? '' : l.batch) : 'N/A'
                             } : l));
                             setDemandAuth(null);
                           }}
-                          className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 font-bold text-slate-900 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-                        >
-                          <option value="">-- Select In-Stock Product * --</option>
-                          {inStockProducts.length === 0 ? (
-                            <option value="" disabled>No products in stock (Stock = 0)</option>
-                          ) : (
-                            inStockProducts.map(p => {
-                              const s = getProductStock(p);
-                              const fifoPrice = getFifoRate(p);
-                              return (
-                                <option key={p.id} value={p.id}>
-                                  {p.name} - ₹{fifoPrice.toFixed(2)} [Lowest Rate/FIFO] | Stock: {s} Pcs
-                                </option>
-                              );
-                            })
-                          )}
-                        </select>
+                          placeholder="-- Select In-Stock Product * --"
+                        />
                         {prod ? (
                           <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-slate-500 font-mono">
                             <span>Pack: <b>{prod.packSize}</b></span>
@@ -1408,18 +1396,35 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
                         {prod?.hsnCode || '-'}
                       </td>
 
-                      {/* Batch Number Input */}
+                      {/* Batch Number Input (Conditional: locked to N/A unless Coolant Pack) */}
                       <td className="py-2.5 px-3">
-                        <input
-                          type="text"
-                          value={line.batch || ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setOrderLines(prev => prev.map(l => l.id === line.id ? { ...l, batch: val } : l));
-                          }}
-                          placeholder="e.g. ABT-77PA"
-                          className="w-28 border border-slate-300 rounded-lg px-2.5 py-1.5 font-mono text-xs text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
-                        />
+                        {(() => {
+                          const isCoolant = prod && (prod.name.toLowerCase().includes('coolant pack') || prod.name.toLowerCase().includes('coolant'));
+                          if (!isCoolant) {
+                            return (
+                              <input
+                                type="text"
+                                disabled
+                                value="N/A"
+                                className="w-28 border border-slate-200 bg-slate-100 rounded-lg px-2.5 py-1.5 font-mono text-xs text-slate-400 cursor-not-allowed select-none"
+                                title="Batch number is locked to N/A for regular products. Only unlocked for Coolant Pack items."
+                              />
+                            );
+                          }
+                          return (
+                            <input
+                              type="text"
+                              value={line.batch === 'N/A' ? '' : (line.batch || '')}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setOrderLines(prev => prev.map(l => l.id === line.id ? { ...l, batch: val } : l));
+                              }}
+                              placeholder="Enter Batch No."
+                              className="w-28 border border-indigo-300 bg-white rounded-lg px-2.5 py-1.5 font-mono text-xs text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none font-bold"
+                              title="Required for Coolant Pack items"
+                            />
+                          );
+                        })()}
                       </td>
 
                       {/* Locked Rate (FIFO Priority) */}
@@ -1609,23 +1614,19 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
             {/* Transport Name */}
             <div className="space-y-1">
               <label className="text-xs font-bold text-slate-700 block">Transport Name:</label>
-              <select
+              <SearchableSelect
+                options={[
+                  'Direct Dispatch / Self',
+                  ...companyTransporters.map(t => ({
+                    label: `${t.name} ${t.gstin ? `(${t.gstin})` : ''}`,
+                    value: t.name,
+                    sublabel: t.gstin ? `GSTIN: ${t.gstin}` : undefined
+                  }))
+                ]}
                 value={transName}
-                onChange={(e) => setTransName(e.target.value)}
-                className={`w-full rounded-lg px-3 py-2 text-xs font-semibold outline-none transition cursor-pointer ${
-                  !transName 
-                    ? 'bg-red-50/20 border border-red-400 text-slate-900 focus:ring-1 focus:ring-red-500' 
-                    : 'bg-white border border-slate-300 text-slate-900 focus:ring-1 focus:ring-blue-500'
-                }`}
-              >
-                <option value="">-- Select Transporter / Dispatch Mode --</option>
-                <option value="Direct Dispatch / Self">Direct Dispatch / Self</option>
-                {companyTransporters.map((t, idx) => (
-                  <option key={idx} value={t.name}>
-                    {t.name} {t.gstin ? `(${t.gstin})` : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setTransName(val)}
+                placeholder="-- Select Transporter / Dispatch Mode --"
+              />
             </div>
 
             {/* LR Number */}

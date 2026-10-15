@@ -70,9 +70,9 @@ export const formatDeliveryChallanNoForCompany = (company: CompanyType = 'AIL', 
   const norm = normalizeCompany(company);
   const numStr = String(seq).padStart(2, '0');
   if (norm === 'HPL') {
-    return `ICHAHPL-DEL-${numStr}/2026-27`;
+    return `ICHAHPL-DL${numStr}/26`;
   }
-  return `ICHAIL-DEL-${numStr}/2026-27`;
+  return `ICHAIL-DL${numStr}/26`;
 };
 
 export const getInvoiceCompany = (inv: { company?: CompanyType; invNo?: string; senderName?: string }): CompanyType => {

@@ -1115,12 +1115,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <th className="py-2.5 px-3">Start & End Time</th>
                     <th className="py-2.5 px-3">TAT</th>
                     <th className="py-2.5 px-3">Live Status</th>
+                    {onDeleteGateEntry && <th className="py-2.5 px-3 text-center">Action</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-[#3e4859]/60 font-medium">
                   {filteredOperations.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="text-center py-20 text-slate-400">
+                      <td colSpan={13} className="text-center py-20 text-slate-400">
                         <div className="flex flex-col items-center justify-center gap-1.5">
                           <Truck className="w-7 h-7 text-slate-300 dark:text-slate-600" />
                           <span className="font-semibold text-xs">No loading/unloading vehicles match your filter.</span>
@@ -1244,6 +1245,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           <td className="py-2.5 px-3">
                             <AnimatedStatusChip status={op.status || ''} size="sm" />
                           </td>
+
+                          {/* 11. Action / Delete */}
+                          {onDeleteGateEntry && (
+                            <td className="py-2.5 px-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(`Are you sure you want to delete operation for vehicle ${op.vehicleNo}?`)) {
+                                    onDeleteGateEntry(op.id);
+                                  }
+                                }}
+                                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-900/80 rounded-md transition cursor-pointer"
+                                title="Delete operation record permanently"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       );
                     })

@@ -94,7 +94,6 @@ import { ReportsView } from './views/ReportsView';
 import { AnalyticsView } from './views/AnalyticsView';
 import { DailyMisAnalyticsView } from './views/DailyMisAnalyticsView';
 import { WaitingQueueView } from './views/WaitingQueueView';
-import { PerformanceSummaryView } from './views/PerformanceSummaryView';
 import { MasterLogsView } from './views/MasterLogsView';
 import { PackingMaterialView } from './views/PackingMaterialView';
 
@@ -1236,17 +1235,7 @@ export default function App() {
                     <span>Daily MIS Analytics</span>
                   </button>
 
-                  <button
-                    onClick={() => handleSwitchView('performanceSummaryView')}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
-                      activeView === 'performanceSummaryView'
-                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30 font-bold'
-                        : 'text-blue-100 hover:bg-white/10 hover:text-white'
-                    }`}
-                  >
-                    <Timer className={`w-4 h-4 ${activeView === 'performanceSummaryView' ? 'text-white' : 'text-amber-400'}`} />
-                    <span>Performance Summary</span>
-                  </button>
+
                 </>
               )}
             </div>
@@ -1773,21 +1762,7 @@ export default function App() {
                     trackingRecords={trackingRecords}
                   />
                 )}
-                {activeView === 'performanceSummaryView' && (
-                  <PerformanceSummaryView
-                    loadEntries={loadEntries}
-                    securityLogs={securityLogs}
-                    planEntries={planEntries}
-                    globalFilterType={filterType}
-                    globalFilterValue={filterValue}
-                    globalFilterEndDate={filterEndDate}
-                    onGlobalDateFilterChange={(type, val, endVal) => {
-                      setFilterType(type);
-                      if (val) setFilterValue(val);
-                      if (endVal) setFilterEndDate(endVal);
-                    }}
-                  />
-                )}
+
               </div>
             )}
           </main>

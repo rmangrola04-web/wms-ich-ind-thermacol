@@ -123,7 +123,15 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Type any keyword, middle letters, or number..."
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  if (filteredOptions.length > 0) {
+                    handleSelect(filteredOptions[0].value);
+                  }
+                }
+              }}
+              placeholder="Type any keyword, middle letters, or number (Press Enter)..."
               className="w-full bg-transparent text-xs font-semibold text-slate-800 placeholder-slate-400 outline-none pr-1"
               onClick={(e) => e.stopPropagation()}
             />

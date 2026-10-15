@@ -1351,15 +1351,11 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
                       {/* Product Selector (Only stock > 0 items displayed) */}
                       <td className="py-2.5 px-3 min-w-[240px]">
                         <SearchableSelect
-                          options={inStockProducts.map(p => {
-                            const s = getProductStock(p);
-                            const fifoPrice = getFifoRate(p);
-                            return {
-                              label: `${p.name} - ₹${fifoPrice.toFixed(2)} [FIFO] | Stock: ${s} Pcs`,
-                              value: p.id,
-                              sublabel: `Pack: ${p.packSize} | Multiple: x${p.packSizeMultiple || 1}`
-                            };
-                          })}
+                          options={inStockProducts.map(p => ({
+                            label: p.name,
+                            value: p.id,
+                            sublabel: `Pack: ${p.packSize || '-'} | HSN: ${p.hsnCode || '39239090'}`
+                          }))}
                           value={line.productId || ''}
                           onChange={(newId) => {
                             const newP = companyProducts.find(p => p.id === newId) || null;

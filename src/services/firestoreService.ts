@@ -185,7 +185,10 @@ export const subscribeToOperations = (
       const list: LoadUnloadEntry[] = [];
       snapshot.forEach((docSnap) => {
         const item = docSnap.data() as any;
-        if (item && (item.operationType || item.gateId || item.bayNo || item.driverName || item.vehicleNo)) {
+        if (!item) return;
+        const isInvoice = item.type === 'INVOICE' || (item.invNo && item.grandTotal !== undefined && item.partyName);
+        if (isInvoice) return;
+        if (item.operationType || item.gateId || item.bayNo || item.driverName || (item.vehicleNo && !item.invNo && item.type !== 'INVOICE')) {
           list.push({ ...item, id: docSnap.id });
         }
       });
@@ -242,39 +245,28 @@ export const subscribeToAllIchOperations = (
             invNo = invNo.replace(/_26$/, '/26');
           }
           invoicesMap.set(invNo, { ...d as ThermocolInvoice, invNo });
+          return;
         }
 
         if (d.type === 'INWARD' || d.grNo || (d.initialQty !== undefined && d.availableQty !== undefined)) {
           const inwId = d.id || id;
           inwardsMap.set(inwId, { ...d as ThermocolInward, id: inwId });
-        }
-
-        if (d.type === 'AUDIT' || (d.action && d.complianceChecksum)) {
+        } else if (d.type === 'AUDIT' || (d.action && d.complianceChecksum)) {
           const audId = d.id || id;
           auditsMap.set(audId, { ...d as InvoiceAuditLog, id: audId });
-        }
-
-        if (d.type === 'PRODUCT' || (d.name && d.packSize)) {
+        } else if (d.type === 'PRODUCT' || (d.name && d.packSize)) {
           const prodKey = `${d.company || 'AIL'}_${String(d.name).trim().toLowerCase()}`;
           productsMap.set(prodKey, { ...d as ThermocolProduct, id: d.id || id });
-        }
-
-        if (d.type === 'PARTY' || (d.name && d.gstin !== undefined)) {
+        } else if (d.type === 'PARTY' || (d.name && d.gstin !== undefined)) {
           const partyKey = `${d.company || 'AIL'}_${String(d.name).trim().toLowerCase()}`;
           partiesMap.set(partyKey, { ...d as ThermocolParty, id: d.id || id });
-        }
-
-        if (d.type === 'TRANSPORTER' || (d.name && d.transporterCode)) {
+        } else if (d.type === 'TRANSPORTER' || (d.name && d.transporterCode)) {
           const transKey = `${d.company || 'AIL'}_${String(d.name).trim().toLowerCase()}`;
           transportersMap.set(transKey, { ...d as ThermocolTransporter, id: d.id || id });
-        }
-
-        if (d.type === 'DEMAND' || (d.partyName && d.monthlyLimit !== undefined)) {
+        } else if (d.type === 'DEMAND' || (d.partyName && d.monthlyLimit !== undefined)) {
           const demKey = `${d.company || 'AIL'}_${String(d.partyName).trim().toLowerCase()}_${String(d.productName || '').trim().toLowerCase()}`;
           demandsMap.set(demKey, { ...d as ClientDemand, id: d.id || id });
-        }
-
-        if (d.operationType || d.gateId || d.bayNo || d.driverName) {
+        } else if (d.operationType || d.gateId || d.bayNo || d.driverName) {
           operationsList.push({ ...d as LoadUnloadEntry, id });
         }
       });
@@ -438,39 +430,28 @@ export const fetchIchOperationsWithGetDocs = async (): Promise<{
         totalCases: Number(d.totalCases) || 0,
         date: d.date || (d.createdAt ? d.createdAt.split('T')[0] : new Date().toISOString().split('T')[0])
       });
+      return;
     }
 
     if (d.type === 'INWARD' || d.grNo || (d.initialQty !== undefined && d.availableQty !== undefined)) {
       const inwId = d.id || id;
       inwardsMap.set(inwId, { ...d as ThermocolInward, id: inwId });
-    }
-
-    if (d.type === 'AUDIT' || (d.action && d.complianceChecksum)) {
+    } else if (d.type === 'AUDIT' || (d.action && d.complianceChecksum)) {
       const audId = d.id || id;
       auditsMap.set(audId, { ...d as InvoiceAuditLog, id: audId });
-    }
-
-    if (d.type === 'PRODUCT' || (d.name && d.packSize)) {
+    } else if (d.type === 'PRODUCT' || (d.name && d.packSize)) {
       const prodKey = `${d.company || 'AIL'}_${String(d.name).trim().toLowerCase()}`;
       productsMap.set(prodKey, { ...d as ThermocolProduct, id: d.id || id });
-    }
-
-    if (d.type === 'PARTY' || (d.name && d.gstin !== undefined)) {
+    } else if (d.type === 'PARTY' || (d.name && d.gstin !== undefined)) {
       const partyKey = `${d.company || 'AIL'}_${String(d.name).trim().toLowerCase()}`;
       partiesMap.set(partyKey, { ...d as ThermocolParty, id: d.id || id });
-    }
-
-    if (d.type === 'TRANSPORTER' || (d.name && d.transporterCode)) {
+    } else if (d.type === 'TRANSPORTER' || (d.name && d.transporterCode)) {
       const transKey = `${d.company || 'AIL'}_${String(d.name).trim().toLowerCase()}`;
       transportersMap.set(transKey, { ...d as ThermocolTransporter, id: d.id || id });
-    }
-
-    if (d.type === 'DEMAND' || (d.partyName && d.monthlyLimit !== undefined)) {
+    } else if (d.type === 'DEMAND' || (d.partyName && d.monthlyLimit !== undefined)) {
       const demKey = `${d.company || 'AIL'}_${String(d.partyName).trim().toLowerCase()}_${String(d.productName || '').trim().toLowerCase()}`;
       demandsMap.set(demKey, { ...d as ClientDemand, id: d.id || id });
-    }
-
-    if (d.operationType || d.gateId || d.bayNo || d.driverName) {
+    } else if (d.operationType || d.gateId || d.bayNo || d.driverName) {
       operationsList.push({ ...d as LoadUnloadEntry, id });
     }
   });

@@ -694,9 +694,13 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
 
   // Form Submission & Inventory Stock Deduction
   const handleSubmitInvoice = async () => {
-    // 1. Client Validation
+    // 1. Client & Mandatory Fields Validation
     if (!selectedPartyName || !selectedPartyName.trim()) {
       setFormMsg({ text: 'Please select a Sold To Party (Client) before generating invoice!', isError: true });
+      return;
+    }
+    if (!transName || !transName.trim() || !lrNo || !lrNo.trim() || !vehicleNo || !vehicleNo.trim()) {
+      setFormMsg({ text: 'Please fill in all mandatory fields: Transporter Name, LR/GR Number, and Vehicle Number before generating the invoice.', isError: true });
       return;
     }
 
@@ -883,7 +887,10 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
     calculations.totalQty <= 0 ||
     inStockProducts.length === 0 ||
     !selectedPartyName ||
-    !hasValidLines;
+    !hasValidLines ||
+    !transName.trim() ||
+    !lrNo.trim() ||
+    !vehicleNo.trim();
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden text-slate-800">
@@ -1087,7 +1094,11 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
                   setSelectedPartyName(e.target.value);
                   setDemandAuth(null); // Invalidate override when switching client
                 }}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition cursor-pointer"
+                className={`w-full rounded-xl px-3.5 py-2.5 text-xs font-bold outline-none transition cursor-pointer ${
+                  !selectedPartyName 
+                    ? 'bg-red-50/20 border border-red-400 text-slate-900 focus:ring-2 focus:ring-red-500/20 focus:border-red-500' 
+                    : 'bg-white border border-slate-300 text-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
+                }`}
               >
                 <option value="">-- Select Sold To Party (Client) * --</option>
                 {filteredParties.length === 0 ? (
@@ -1601,7 +1612,11 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
               <select
                 value={transName}
                 onChange={(e) => setTransName(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                className={`w-full rounded-lg px-3 py-2 text-xs font-semibold outline-none transition cursor-pointer ${
+                  !transName 
+                    ? 'bg-red-50/20 border border-red-400 text-slate-900 focus:ring-1 focus:ring-red-500' 
+                    : 'bg-white border border-slate-300 text-slate-900 focus:ring-1 focus:ring-blue-500'
+                }`}
               >
                 <option value="">-- Select Transporter / Dispatch Mode --</option>
                 <option value="Direct Dispatch / Self">Direct Dispatch / Self</option>
@@ -1621,7 +1636,11 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
                 value={lrNo}
                 onChange={(e) => setLrNo(e.target.value)}
                 placeholder="e.g. LR-78901"
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono font-bold text-slate-900 outline-none focus:ring-1 focus:ring-blue-500"
+                className={`w-full rounded-lg px-3 py-2 text-xs font-mono font-bold outline-none transition ${
+                  !lrNo.trim() 
+                    ? 'bg-red-50/20 border border-red-400 text-slate-900 focus:ring-1 focus:ring-red-500' 
+                    : 'bg-white border border-slate-300 text-slate-900 focus:ring-1 focus:ring-blue-500'
+                }`}
               />
             </div>
 
@@ -1644,7 +1663,11 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
                 value={vehicleNo}
                 onChange={(e) => setVehicleNo(e.target.value)}
                 placeholder="e.g. MP09-AB-1234"
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono font-bold uppercase text-slate-900 outline-none focus:ring-1 focus:ring-blue-500"
+                className={`w-full rounded-lg px-3 py-2 text-xs font-mono font-bold uppercase outline-none transition ${
+                  !vehicleNo.trim() 
+                    ? 'bg-red-50/20 border border-red-400 text-slate-900 focus:ring-1 focus:ring-red-500' 
+                    : 'bg-white border border-slate-300 text-slate-900 focus:ring-1 focus:ring-blue-500'
+                }`}
               />
             </div>
           </div>
@@ -1726,11 +1749,13 @@ export const OutwardOrderEntryFormContent: React.FC<OutwardOrderEntryFormProps> 
             <span>Generate & Save Outward {effectiveIsInterState ? 'Tax Invoice' : 'Delivery Challan'} ({currentInvNo}) & Deduct Inventory Stock</span>
           </button>
           {isSaveDisabled && (
-            <p className="text-center text-[11px] text-slate-400 mt-2">
+            <p className="text-center text-[11px] text-red-500 font-bold mt-2">
               {!selectedPartyName
                 ? 'Please select a Sold To Party (Client) from the dropdown to proceed.'
                 : !hasValidLines || calculations.totalQty <= 0
                 ? 'Please select product(s) and specify positive dispatch quantities (cases/units).'
+                : !transName.trim() || !lrNo.trim() || !vehicleNo.trim()
+                ? 'Please fill in all mandatory fields: Transporter Name, LR/GR Number, and Vehicle Number before generating the invoice.'
                 : calculations.hasPackSizeError 
                 ? 'Fix pack-size multiple error before proceeding.'
                 : isSaveBlockedByDemand

@@ -82,7 +82,7 @@ export const TaxInvoiceModalOverlay: React.FC<TaxInvoiceModalOverlayProps> = ({
     <style>
         @page {
             size: A4 landscape;
-            margin: 4mm;
+            margin: 8mm;
         }
         *, *::before, *::after {
             box-sizing: border-box !important;
@@ -99,7 +99,7 @@ export const TaxInvoiceModalOverlay: React.FC<TaxInvoiceModalOverlayProps> = ({
             color: #111111;
         }
         .no-print {
-            max-width: 287mm;
+            max-width: 281mm;
             margin: 0 auto 12px auto;
             display: flex;
             justify-content: space-between;
@@ -130,11 +130,12 @@ export const TaxInvoiceModalOverlay: React.FC<TaxInvoiceModalOverlayProps> = ({
             #taxInvoicePrintArea, .tax-invoice-page {
                 border: 1px solid #000 !important;
                 box-shadow: none !important;
-                max-width: 287mm !important;
+                max-width: 281mm !important;
                 width: 100% !important;
-                padding: 2.5mm 3.5mm !important;
+                padding: 4mm !important;
                 margin: 0 auto !important;
                 overflow: visible !important;
+                box-sizing: border-box !important;
             }
         }
     </style>

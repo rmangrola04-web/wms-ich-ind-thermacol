@@ -50,7 +50,7 @@ export const TaxInvoiceModal: React.FC<Props> = ({ invoice, onClose, isInline = 
   <style>
     @page { 
       size: A4 landscape; 
-      margin: 4mm; 
+      margin: 8mm; 
     }
     *, *::before, *::after {
       scrollbar-width: none !important;
@@ -75,9 +75,9 @@ export const TaxInvoiceModal: React.FC<Props> = ({ invoice, onClose, isInline = 
       #taxInvoicePrintArea, .tax-invoice-page {
         position: relative !important;
         width: 100% !important;
-        max-width: 287mm !important;
+        max-width: 281mm !important;
         height: auto !important;
-        padding: 2.5mm 3.5mm !important;
+        padding: 4mm !important;
         box-sizing: border-box !important;
         border: 1px solid #000000 !important;
         box-shadow: none !important;
